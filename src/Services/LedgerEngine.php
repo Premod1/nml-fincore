@@ -295,4 +295,187 @@ class LedgerEngine
             'net_income'   => $netIncome,
         ];
     }
+
+    /**
+     * Generate Cash Flow Statement (Indirect Method).
+     */
+    public function getCashFlowStatement(string $startDate, string $endDate, ?string $sbuCode = null): array
+    {
+        $cashCodes = config('accounting.cash_account_codes', ['1000', '1100']);
+        $financingCodes = config('accounting.financing_account_codes', ['2400', '2500', '3000']);
+        $nonCashExpenseCodes = config('accounting.non_cash_expense_codes', ['5500']);
+
+        // 1. Net Income from Income Statement
+        $incomeStatement = $this->getIncomeStatement($startDate, $endDate, $sbuCode);
+        $netIncome = $incomeStatement['net_income'];
+
+        // Helper to calculate balance changes
+        $dayBeforeStart = date('Y-m-d', strtotime($startDate . ' -1 day'));
+
+        // Load all active accounts
+        $accounts = Account::where('is_active', true)->get();
+
+        $operatingAdjustments = [];
+        $investingAdjustments = [];
+        $financingAdjustments = [];
+
+        $totalOperating = $netIncome; // Starting with Net Income
+        $totalInvesting = 0.0;
+        $totalFinancing = 0.0;
+
+        foreach ($accounts as $account) {
+            $code = $account->code;
+
+            // Skip cash accounts
+            if (in_array($code, $cashCodes)) {
+                continue;
+            }
+
+            // Calculate change in balance: Balance(End) - Balance(Before Start)
+            $balStart = $account->getCurrentBalance(false, $sbuCode, null, $dayBeforeStart);
+            $balEnd = $account->getCurrentBalance(false, $sbuCode, null, $endDate);
+            $change = $balEnd - $balStart;
+
+            // Classification of adjustments:
+            if ($account->type === AccountType::EXPENSE && in_array($code, $nonCashExpenseCodes)) {
+                // Non-cash expense (e.g. depreciation):
+                // We add back the period expense (not the balance change)
+                $periodExpense = $account->getCurrentBalance(false, $sbuCode, $startDate, $endDate);
+                if ($periodExpense != 0.0) {
+                    $operatingAdjustments[] = [
+                        'account_id' => $account->id,
+                        'code' => $code,
+                        'name' => $account->name,
+                        'type' => 'non_cash_expense',
+                        'change' => $periodExpense,
+                        'impact' => $periodExpense, // Add back
+                    ];
+                    $totalOperating += $periodExpense;
+                }
+            } elseif ($account->type === AccountType::ASSET) {
+                if ($account->subtype === 'current_asset') {
+                    // Operating Asset adjustment: -(Change)
+                    if ($change != 0.0) {
+                        $impact = -$change;
+                        $operatingAdjustments[] = [
+                            'account_id' => $account->id,
+                            'code' => $code,
+                            'name' => $account->name,
+                            'type' => 'operating_asset',
+                            'change' => $change,
+                            'impact' => $impact,
+                        ];
+                        $totalOperating += $impact;
+                    }
+                } elseif ($account->subtype === 'fixed_asset' || $account->subtype === 'non_current_asset') {
+                    // Investing Asset adjustment: -(Change)
+                    if ($change != 0.0) {
+                        $impact = -$change;
+                        $investingAdjustments[] = [
+                            'account_id' => $account->id,
+                            'code' => $code,
+                            'name' => $account->name,
+                            'type' => 'investing_asset',
+                            'change' => $change,
+                            'impact' => $impact,
+                        ];
+                        $totalInvesting += $impact;
+                    }
+                }
+            } elseif ($account->type === AccountType::LIABILITY) {
+                if (in_array($code, $financingCodes) || $account->subtype === 'non_current_liability') {
+                    // Financing Liability adjustment: +(Change)
+                    if ($change != 0.0) {
+                        $financingAdjustments[] = [
+                            'account_id' => $account->id,
+                            'code' => $code,
+                            'name' => $account->name,
+                            'type' => 'financing_liability',
+                            'change' => $change,
+                            'impact' => $change,
+                        ];
+                        $totalFinancing += $change;
+                    }
+                } elseif ($account->subtype === 'current_liability') {
+                    // Operating Liability adjustment: +(Change)
+                    if ($change != 0.0) {
+                        $operatingAdjustments[] = [
+                            'account_id' => $account->id,
+                            'code' => $code,
+                            'name' => $account->name,
+                            'type' => 'operating_liability',
+                            'change' => $change,
+                            'impact' => $change,
+                        ];
+                        $totalOperating += $change;
+                    }
+                }
+            } elseif ($account->type === AccountType::EQUITY) {
+                // Exclude Retained Earnings (3100) and Income Summary (3900)
+                if ($code !== '3100' && $code !== '3900' && $change != 0.0) {
+                    $financingAdjustments[] = [
+                        'account_id' => $account->id,
+                        'code' => $code,
+                        'name' => $account->name,
+                        'type' => 'equity',
+                        'change' => $change,
+                        'impact' => $change,
+                    ];
+                    $totalFinancing += $change;
+                }
+            }
+        }
+
+        // 4. Calculate beginning and ending cash
+        $beginningCash = 0.0;
+        $endingCash = 0.0;
+        $cashDetails = [];
+
+        $cashAccounts = Account::whereIn('code', $cashCodes)->get();
+        foreach ($cashAccounts as $cashAccount) {
+            $startBal = $cashAccount->getCurrentBalance(false, $sbuCode, null, $dayBeforeStart);
+            $endBal = $cashAccount->getCurrentBalance(false, $sbuCode, null, $endDate);
+            $beginningCash += $startBal;
+            $endingCash += $endBal;
+
+            $cashDetails[] = [
+                'account_id' => $cashAccount->id,
+                'code' => $cashAccount->code,
+                'name' => $cashAccount->name,
+                'beginning_balance' => $startBal,
+                'ending_balance' => $endBal,
+                'change' => $endBal - $startBal,
+            ];
+        }
+
+        $netIncreaseDecrease = $totalOperating + $totalInvesting + $totalFinancing;
+
+        $tolerance = (float) config('accounting.rounding_tolerance', 0.005);
+        $reconciledDiff = abs(($beginningCash + $netIncreaseDecrease) - $endingCash);
+        $isReconciled = $reconciledDiff <= $tolerance;
+
+        return [
+            'start_date' => $startDate,
+            'end_date' => $endDate,
+            'net_income' => $netIncome,
+            'operating_activities' => [
+                'adjustments' => $operatingAdjustments,
+                'total' => $totalOperating,
+            ],
+            'investing_activities' => [
+                'adjustments' => $investingAdjustments,
+                'total' => $totalInvesting,
+            ],
+            'financing_activities' => [
+                'adjustments' => $financingAdjustments,
+                'total' => $totalFinancing,
+            ],
+            'net_increase_decrease' => $netIncreaseDecrease,
+            'beginning_cash' => $beginningCash,
+            'ending_cash' => $endingCash,
+            'cash_details' => $cashDetails,
+            'is_reconciled' => $isReconciled,
+            'reconciled_difference' => $reconciledDiff,
+        ];
+    }
 }

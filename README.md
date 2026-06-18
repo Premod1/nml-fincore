@@ -35,7 +35,7 @@ php artisan vendor:publish --tag=fincore-config
 * **Double-Entry General Ledger Engine**: Enforces exact balance matching for debit and credit lines within a configurable rounding tolerance.
 * **Polymorphic Transactions**: Links journal entries directly to external source models such as Invoices, Sales, Purchases, or Payments.
 * **Dynamic Chart of Accounts**: Classifies and rolls up accounts hierarchically under Assets, Liabilities, Equity, Revenue, and Expenses.
-* **Real-time Financial Reporting**: Outputs General Ledger, Trial Balance, Balance Sheet, and Income Statement (P&L) dynamically based on date range and SBU codes.
+* **Real-time Financial Reporting**: Outputs General Ledger, Trial Balance, Balance Sheet, Income Statement (P&L), and Cash Flow statement dynamically based on date range and SBU codes.
 * **Multi-SBU Segment Reporting**: Tracks entries using Strategic Business Unit (SBU) codes for departmental or branch-level accounting.
 * **Fiscal Period Management**: Supports locking accounting periods to prevent retrospective entries.
 
@@ -43,12 +43,31 @@ php artisan vendor:publish --tag=fincore-config
 
 ## Initialization
 
-Seed the standard Chart of Accounts using the provided initializer:
+Seed the standard Chart of Accounts using the provided seeder or calling the initializer class directly:
+
+### Option A: Using Laravel Database Seeder
+Add the package seeder class to your main `database/seeders/DatabaseSeeder.php` file:
+
+```php
+public function run(): void
+{
+    $this->call(\Nml\FinCore\Database\Seeders\FinCoreSeeder::class);
+}
+```
+
+Or run it directly from the terminal:
+
+```bash
+php artisan db:seed --class="Nml\FinCore\Database\Seeders\FinCoreSeeder"
+```
+
+### Option B: Programmatic Initialization
+You can seed the standard Chart of Accounts programmatically (e.g., in a tenant setup flow or custom script):
 
 ```php
 use Nml\FinCore\Services\ChartOfAccountsInitializer;
 
-// This will seed the default chart of accounts (idempotent, safe to rerun)
+// Seeds the default chart of accounts (idempotent, safe to rerun)
 ChartOfAccountsInitializer::initialize('LKR');
 ```
 
@@ -157,7 +176,28 @@ $equity = $balanceSheet['equity']['total'];
 $isBalanced = $balanceSheet['is_balanced']; // Assets = Liabilities + Equity
 ```
 
-### 5. Managing Entry Statuses
+### 5. Generating a Cash Flow Statement
+
+Generate a Cash Flow statement (indirect method) for a date range:
+
+```php
+use Nml\FinCore\Facades\FinCore;
+
+$cashFlow = FinCore::getCashFlowStatement(
+    startDate: '2026-01-01',
+    endDate: '2026-06-30'
+);
+
+$operatingTotal = $cashFlow['operating_activities']['total'];
+$investingTotal = $cashFlow['investing_activities']['total'];
+$financingTotal = $cashFlow['financing_activities']['total'];
+$netIncreaseDecrease = $cashFlow['net_increase_decrease'];
+$beginningCash = $cashFlow['beginning_cash'];
+$endingCash = $cashFlow['ending_cash'];
+$isReconciled = $cashFlow['is_reconciled']; // true if beginningCash + netIncreaseDecrease matches endingCash
+```
+
+### 6. Managing Entry Statuses
 
 Transitions draft entries to submitted, and void or reject them:
 
