@@ -32,12 +32,25 @@ php artisan vendor:publish --tag=fincore-config
 
 ## Core Feature List
 
-* **Double-Entry General Ledger Engine**: Enforces exact balance matching for debit and credit lines within a configurable rounding tolerance.
-* **Polymorphic Transactions**: Links journal entries directly to external source models such as Invoices, Sales, Purchases, or Payments.
-* **Dynamic Chart of Accounts**: Classifies and rolls up accounts hierarchically under Assets, Liabilities, Equity, Revenue, and Expenses.
-* **Real-time Financial Reporting**: Outputs General Ledger, Trial Balance, Balance Sheet, Income Statement (P&L), and Cash Flow statement dynamically based on date range and SBU codes.
-* **Multi-SBU Segment Reporting**: Tracks entries using Strategic Business Unit (SBU) codes for departmental or branch-level accounting.
-* **Fiscal Period Management**: Supports locking accounting periods to prevent retrospective entries.
+* **Double-entry accounting engine**: Enforces exact balance matching for debit and credit lines within a configurable rounding tolerance.
+* **Dynamic chart of accounts**: Classifies and rolls up accounts hierarchically under Assets, Liabilities, Equity, Revenue, and Expenses with parent-child relationship support.
+* **Real-time general ledger generation**: Generates real-time ledger entries and balances.
+* **Trial Balance reporting**: Dynamic Trial Balance generation based on date range and SBU codes.
+* **Balance Sheet reporting**: Dynamic Balance Sheet generation showing Assets, Liabilities, and Equity.
+* **Income Statement (P&L)**: Dynamic Profit & Loss reporting based on Revenue and Expense accounts.
+* **Cash Flow statements**: Automatically generated Cash Flow statements based on account movements.
+* **Multi-SBU / branch reporting**: Tracks entries using Strategic Business Unit (SBU) codes for departmental or branch-level accounting.
+* **Fiscal period locking**: Prevents retrospective postings or modifications to closed accounting periods and years.
+* **Polymorphic transaction linking**: Links journal entries directly to external source models (Invoices, Sales, Purchases, Payments).
+* **Multi-currency support**: Supports transactions in foreign currencies with exchange rates.
+* **Tax/VAT handling**: Enforces tax rules, inclusive/exclusive calculations, and automated tax line generation.
+* **Fixed asset management**: Fixed asset register with purchase cost and accumulated depreciation tracking.
+* **Automated depreciation posting**: Automatically calculates and posts monthly straight-line depreciation entries.
+* **Budgeting & variance reporting**: Sets monthly budget targets per account and generates Budget vs. Actual variance reports.
+* **Bank reconciliation matching**: Automatically matches bank statement transactions with ledger lines and supports manual clearing.
+* **AR/AP ageing reports**: Tracks partner receivables and payables with FIFO payment allocation and ageing buckets.
+* **Fiscal year closing engine**: Automatically zero-out temporary Revenue/Expense accounts and transfers Net Profit/Loss to Retained Earnings.
+* **Full audit trail & activity logging**: Automatically logs all creations, updates, status transitions, and deletions, capturing user ID, IP address, user agent, and JSON diffs.
 
 ---
 
@@ -69,6 +82,36 @@ use Nml\FinCore\Services\ChartOfAccountsInitializer;
 
 // Seeds the default chart of accounts (idempotent, safe to rerun)
 ChartOfAccountsInitializer::initialize('LKR');
+```
+
+### Chart of Accounts Management
+
+To create and manage custom accounts (including parent-child hierarchies), use the `Account` model:
+
+#### Creating a Root Account
+```php
+use Nml\FinCore\Models\Account;
+use Nml\FinCore\Enums\AccountType;
+
+$assetsParent = Account::create([
+    'code' => '1000',
+    'name' => 'Assets',
+    'type' => AccountType::ASSET->value,
+    'subtype' => 'asset',
+    'parent_id' => null, // Root account
+]);
+```
+
+#### Creating a Sub-Account (Child Account)
+Link it to its parent by passing the parent's `id`:
+```php
+$bankAccount = Account::create([
+    'code' => '1100',
+    'name' => 'Seylan Bank A/C',
+    'type' => AccountType::ASSET->value,
+    'subtype' => 'current_asset',
+    'parent_id' => $assetsParent->id, // Linked to the parent account
+]);
 ```
 
 ---
