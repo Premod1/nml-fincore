@@ -254,3 +254,59 @@ $entry->returnToDraft('Reason for rejection');
 // Void posted journal entry
 $entry->void();
 ```
+
+### 8. Advanced: Tax/VAT & Multi-Currency
+
+#### Registering a Tax Rate
+Create a tax rate mapping it to a general ledger account for tax postings:
+
+```php
+use Nml\FinCore\Models\Tax;
+
+$vatTax = Tax::create([
+    'name' => 'VAT 15%',
+    'code' => 'VAT-15',
+    'rate' => 15.00,
+    'account_id' => 15, // Output VAT Payable account ID
+    'is_active' => true
+]);
+```
+
+#### Creating a Multi-Currency Entry with Automatic Tax Calculation
+When creating a foreign currency transaction with tax:
+1. Provide the `currency` (e.g. `'USD'`) and `exchange_rate` (e.g. `300.000000`).
+2. Provide `fc_amount` (Foreign Currency amount) on lines. The system automatically computes the functional currency `amount = fc_amount * exchange_rate`.
+3. Provide `tax_id` and `tax_behavior` (`'inclusive'` or `'exclusive'`). The system calculates the tax and automatically creates the corresponding tax ledger entry.
+
+```php
+use Nml\FinCore\Facades\FinCore;
+use Nml\FinCore\Enums\JvType;
+
+$entry = FinCore::createJournalEntry([
+    'date' => '2026-06-18',
+    'reference' => 'TX-USD-001',
+    'type' => JvType::GENERAL->value,
+    'description' => 'Foreign sale invoice with tax',
+    'currency' => 'USD',
+    'exchange_rate' => 300.000000,
+    'lines' => [
+        [
+            'account_id' => 3, // Accounts Receivable (Asset)
+            'type' => 'debit',
+            'fc_amount' => 115.00, // Total USD including tax
+            'description' => 'A/R for foreign sale'
+        ],
+        [
+            'account_id' => 20, // Sales Revenue (Revenue)
+            'type' => 'credit',
+            'fc_amount' => 115.00,
+            'tax_id' => $vatTax->id,
+            'tax_behavior' => 'inclusive', // Tax amount (15 USD / 4500 LKR) is extracted and posted to Output VAT
+            'description' => 'Sales revenue inclusive of VAT'
+        ]
+    ]
+]);
+
+// Post to ledger. Validates balancing in both USD (115.00) and LKR (34500.00).
+$entry->post();
+```

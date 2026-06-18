@@ -9,6 +9,7 @@ use Nml\FinCore\Exceptions\AccountingException;
 use Nml\FinCore\Models\Account;
 use Nml\FinCore\Models\JournalEntry;
 use Nml\FinCore\Models\JournalEntryLine;
+use Nml\FinCore\Models\Tax;
 
 class LedgerEngine
 {
@@ -86,6 +87,10 @@ class LedgerEngine
             $count = JournalEntry::whereYear('date', $year)->count() + 1;
             $entryNumber = 'JE-' . $year . '-' . str_pad($count, 5, '0', STR_PAD_LEFT);
 
+            $currency = $data['currency'] ?? config('accounting.currency', 'LKR');
+            $exchangeRate = (float) ($data['exchange_rate'] ?? 1.0);
+            $isForeign = ($currency !== config('accounting.currency', 'LKR'));
+
             /** @var JournalEntry $entry */
             $entry = JournalEntry::create([
                 'entry_number'     => $entryNumber,
@@ -94,21 +99,95 @@ class LedgerEngine
                 'type'             => $data['type'] ?? 'general',
                 'description'      => $data['description'] ?? null,
                 'status'           => JvStatus::DRAFT,
+                'currency'         => $currency,
+                'exchange_rate'    => $exchangeRate,
                 'sbu_code'         => $data['sbu_code'] ?? null,
                 'journalable_type' => $data['journalable_type'] ?? null,
                 'journalable_id'   => $data['journalable_id'] ?? null,
                 'created_by'       => $data['created_by'] ?? null,
             ]);
 
+            $processedLines = [];
+
             if (isset($data['lines']) && is_array($data['lines'])) {
                 foreach ($data['lines'] as $line) {
-                    $entry->lines()->create([
+                    $fcAmount = isset($line['fc_amount']) ? (float) $line['fc_amount'] : null;
+                    $amount = isset($line['amount']) ? (float) $line['amount'] : null;
+
+                    if ($isForeign) {
+                        if ($fcAmount !== null && $amount === null) {
+                            $amount = round($fcAmount * $exchangeRate, 4);
+                        } elseif ($fcAmount === null && $amount !== null) {
+                            $fcAmount = round($amount / $exchangeRate, 4);
+                        } elseif ($fcAmount === null && $amount === null) {
+                            $fcAmount = 0.0;
+                            $amount = 0.0;
+                        }
+                    } else {
+                        if ($amount === null) {
+                            $amount = $fcAmount !== null ? $fcAmount : 0.0;
+                        }
+                        $fcAmount = $amount;
+                    }
+
+                    $taxId = $line['tax_id'] ?? null;
+                    $taxBehavior = $line['tax_behavior'] ?? 'exclusive';
+
+                    if ($taxId) {
+                        $tax = Tax::find($taxId);
+                        if ($tax && $tax->is_active) {
+                            $rate = (float) $tax->rate;
+                            if ($taxBehavior === 'inclusive') {
+                                $fcTaxAmount = round($fcAmount - ($fcAmount / (1 + $rate / 100)), 4);
+                                $taxAmount = round($amount - ($amount / (1 + $rate / 100)), 4);
+
+                                // Adjust base line
+                                $fcAmount = round($fcAmount - $fcTaxAmount, 4);
+                                $amount = round($amount - $taxAmount, 4);
+                            } else {
+                                // Exclusive
+                                $fcTaxAmount = round($fcAmount * ($rate / 100), 4);
+                                $taxAmount = round($amount * ($rate / 100), 4);
+                            }
+
+                            // Push base line
+                            $processedLines[] = [
+                                'account_id'  => $line['account_id'],
+                                'type'        => $line['type'],
+                                'amount'      => $amount,
+                                'fc_amount'   => $fcAmount,
+                                'tax_id'      => $taxId,
+                                'description' => $line['description'] ?? null,
+                            ];
+
+                            // Push automatic tax line
+                            $processedLines[] = [
+                                'account_id'  => $tax->account_id,
+                                'type'        => $line['type'],
+                                'amount'      => $taxAmount,
+                                'fc_amount'   => $fcTaxAmount,
+                                'tax_id'      => $taxId,
+                                'description' => "Tax (" . $tax->name . ") calculated for " . ($line['description'] ?? 'base transaction'),
+                            ];
+
+                            continue;
+                        }
+                    }
+
+                    // Push standard line
+                    $processedLines[] = [
                         'account_id'  => $line['account_id'],
                         'type'        => $line['type'],
-                        'amount'      => $line['amount'],
+                        'amount'      => $amount,
+                        'fc_amount'   => $fcAmount,
+                        'tax_id'      => null,
                         'description' => $line['description'] ?? null,
-                    ]);
+                    ];
                 }
+            }
+
+            foreach ($processedLines as $processedLine) {
+                $entry->lines()->create($processedLine);
             }
 
             return $entry;

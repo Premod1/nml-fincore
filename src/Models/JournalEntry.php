@@ -18,6 +18,8 @@ class JournalEntry extends Model
         'type',
         'description',
         'status',
+        'currency',
+        'exchange_rate',
         'sbu_code',
         'journalable_type',
         'journalable_id',
@@ -35,6 +37,7 @@ class JournalEntry extends Model
         'date' => 'date',
         'submitted_at' => 'datetime',
         'approved_at' => 'datetime',
+        'exchange_rate' => 'float',
     ];
 
     public function getTable()
@@ -77,11 +80,21 @@ class JournalEntry extends Model
             throw new AccountingException("Cannot post an entry that is already posted or voided.");
         }
 
-        // 1. Enforce debit-credit balance
+        // 1. Enforce debit-credit balance in functional currency
         $tolerance = (float) config('accounting.rounding_tolerance', 0.005);
         $diff = abs($this->getDebitSum() - $this->getCreditSum());
         if ($diff > $tolerance) {
-            throw new AccountingException("Debits ({$this->getDebitSum()}) and Credits ({$this->getCreditSum()}) must match within tolerance ({$tolerance}). Difference is {$diff}.");
+            throw new AccountingException("Debits ({$this->getDebitSum()}) and Credits ({$this->getCreditSum()}) must match within tolerance ({$tolerance}) in functional currency. Difference is {$diff}.");
+        }
+
+        // 2. Validate foreign currency balancing if it's a foreign currency transaction
+        if ($this->currency !== config('accounting.currency', 'LKR')) {
+            $fcDebit = (float) $this->lines()->where('type', 'debit')->sum('fc_amount');
+            $fcCredit = (float) $this->lines()->where('type', 'credit')->sum('fc_amount');
+            $fcDiff = abs($fcDebit - $fcCredit);
+            if ($fcDiff > $tolerance) {
+                throw new AccountingException("Foreign currency debits ({$fcDebit}) and credits ({$fcCredit}) must match within tolerance. Difference is {$fcDiff} {$this->currency}.");
+            }
         }
 
         // 2. Enforce Period Lock

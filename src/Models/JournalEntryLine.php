@@ -12,6 +12,8 @@ class JournalEntryLine extends Model
         'account_id',
         'type',
         'amount',
+        'fc_amount',
+        'tax_id',
         'description',
         'cleared_at',
         'bank_reconciliation_id',
@@ -19,6 +21,8 @@ class JournalEntryLine extends Model
 
     protected $casts = [
         'amount' => 'float',
+        'fc_amount' => 'float',
+        'tax_id' => 'integer',
         'cleared_at' => 'datetime',
     ];
 
@@ -40,5 +44,10 @@ class JournalEntryLine extends Model
     public function bankReconciliation(): BelongsTo
     {
         return $this->belongsTo(BankReconciliation::class);
+    }
+
+    public function tax(): BelongsTo
+    {
+        return $this->belongsTo(Tax::class);
     }
 }
