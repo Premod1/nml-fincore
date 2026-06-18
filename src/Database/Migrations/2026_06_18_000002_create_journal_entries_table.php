@@ -13,12 +13,12 @@ return new class extends Migration
         Schema::create($prefix . 'journal_entries', function (Blueprint $table) {
             $table->id();
             $table->string('entry_number')->unique();
-            $table->date('date');
+            $table->date('date')->index();
             $table->string('reference')->nullable();
             $table->enum('type', ['general', 'closing', 'adjustment'])->default('general');
             $table->text('description')->nullable();
-            $table->enum('status', ['draft', 'submitted', 'posted', 'void'])->default('draft');
-            $table->string('sbu_code')->nullable();
+            $table->enum('status', ['draft', 'submitted', 'posted', 'void'])->default('draft')->index();
+            $table->string('sbu_code')->nullable()->index();
             $table->nullableMorphs('journalable');
             $table->unsignedBigInteger('created_by')->nullable();
             $table->unsignedBigInteger('submitted_by')->nullable();

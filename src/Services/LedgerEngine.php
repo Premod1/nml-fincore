@@ -13,6 +13,67 @@ use Nml\FinCore\Models\JournalEntryLine;
 class LedgerEngine
 {
     /**
+     * Fetch balances for multiple accounts in a single optimized query.
+     * Returns an array mapping account_id => balance (float).
+     */
+    public function getBalancesForAccounts(
+        array $accountIds,
+        ?string $sbuCode = null,
+        ?string $startDate = null,
+        ?string $endDate = null
+    ): array {
+        if (empty($accountIds)) {
+            return [];
+        }
+
+        $prefix = config('accounting.table_prefix', 'fincore_');
+
+        $query = DB::table($prefix . 'journal_entry_lines as lines')
+            ->join($prefix . 'journal_entries as entries', 'lines.journal_entry_id', '=', 'entries.id')
+            ->whereIn('lines.account_id', $accountIds)
+            ->where('entries.status', JvStatus::POSTED->value);
+
+        if ($sbuCode) {
+            $query->where('entries.sbu_code', $sbuCode);
+        }
+        if ($startDate) {
+            $query->where('entries.date', '>=', $startDate);
+        }
+        if ($endDate) {
+            $query->where('entries.date', '<=', $endDate);
+        }
+
+        $results = $query->select('lines.account_id')
+            ->selectRaw("SUM(CASE WHEN lines.type = 'debit' THEN lines.amount ELSE 0 END) as total_debit")
+            ->selectRaw("SUM(CASE WHEN lines.type = 'credit' THEN lines.amount ELSE 0 END) as total_credit")
+            ->groupBy('lines.account_id')
+            ->get();
+
+        $balances = [];
+        foreach ($accountIds as $id) {
+            $balances[$id] = 0.0;
+        }
+
+        $accounts = Account::whereIn('id', $accountIds)->get()->keyBy('id');
+
+        foreach ($results as $row) {
+            $accId = $row->account_id;
+            $account = $accounts->get($accId);
+            if ($account) {
+                $debits = (float) $row->total_debit;
+                $credits = (float) $row->total_credit;
+                if ($account->hasNormalDebitBalance()) {
+                    $balances[$accId] = $debits - $credits;
+                } else {
+                    $balances[$accId] = $credits - $debits;
+                }
+            }
+        }
+
+        return $balances;
+    }
+
+    /**
      * Create a new Journal Entry with its lines.
      */
     public function createJournalEntry(array $data): JournalEntry
@@ -61,7 +122,9 @@ class LedgerEngine
         ?int $accountId = null,
         ?string $startDate = null,
         ?string $endDate = null,
-        ?string $sbuCode = null
+        ?string $sbuCode = null,
+        ?int $perPage = null,
+        ?int $page = null
     ): array {
         $accountsQuery = Account::query()->where('is_active', true);
         if ($accountId) {
@@ -69,41 +132,86 @@ class LedgerEngine
         }
 
         $accounts = $accountsQuery->get();
+        $accountIds = $accounts->pluck('id')->toArray();
+        $dayBeforeStart = $startDate ? date('Y-m-d', strtotime($startDate . ' -1 day')) : null;
+
+        // Bulk fetch opening and closing balances
+        $openingBalances = [];
+        if ($startDate) {
+            $openingBalances = $this->getBalancesForAccounts($accountIds, $sbuCode, null, $dayBeforeStart);
+        }
+        $closingBalances = $this->getBalancesForAccounts($accountIds, $sbuCode, null, $endDate);
+
+        // Bulk fetch period debits/credits to eliminate loop subqueries
+        $prefix = config('accounting.table_prefix', 'fincore_');
+        $periodSumsQuery = DB::table($prefix . 'journal_entry_lines as lines')
+            ->join($prefix . 'journal_entries as entries', 'lines.journal_entry_id', '=', 'entries.id')
+            ->whereIn('lines.account_id', $accountIds)
+            ->where('entries.status', JvStatus::POSTED->value);
+
+        if ($sbuCode) {
+            $periodSumsQuery->where('entries.sbu_code', $sbuCode);
+        }
+        if ($startDate) {
+            $periodSumsQuery->where('entries.date', '>=', $startDate);
+        }
+        if ($endDate) {
+            $periodSumsQuery->where('entries.date', '<=', $endDate);
+        }
+
+        $periodSums = $periodSumsQuery->select('lines.account_id')
+            ->selectRaw("SUM(CASE WHEN lines.type = 'debit' THEN lines.amount ELSE 0 END) as period_debit")
+            ->selectRaw("SUM(CASE WHEN lines.type = 'credit' THEN lines.amount ELSE 0 END) as period_credit")
+            ->groupBy('lines.account_id')
+            ->get()
+            ->keyBy('account_id');
+
         $report = [];
 
         foreach ($accounts as $account) {
-            // 1. Calculate Opening Balance (posted balance before start date)
-            $openingBalance = 0.0;
-            if ($startDate) {
-                $openingBalance = $account->getCurrentBalance(
-                    includeChildren: false,
-                    sbuCode: $sbuCode,
-                    startDate: null,
-                    endDate: date('Y-m-d', strtotime($startDate . ' -1 day'))
+            $openingBalance = $openingBalances[$account->id] ?? 0.0;
+            $closingBalance = $closingBalances[$account->id] ?? 0.0;
+
+            $sums = $periodSums->get($account->id);
+            $periodDebits = $sums ? (float) $sums->period_debit : 0.0;
+            $periodCredits = $sums ? (float) $sums->period_credit : 0.0;
+
+            // Fetch lines using Query Builder (stdClass) to avoid Eloquent OOM
+            $linesQuery = DB::table($prefix . 'journal_entry_lines as lines')
+                ->join($prefix . 'journal_entries as entries', 'lines.journal_entry_id', '=', 'entries.id')
+                ->where('lines.account_id', $account->id)
+                ->where('entries.status', JvStatus::POSTED->value)
+                ->select(
+                    'lines.id as line_id',
+                    'lines.type',
+                    'lines.amount',
+                    'lines.description as line_description',
+                    'entries.date',
+                    'entries.entry_number',
+                    'entries.reference',
+                    'entries.description as entry_description'
                 );
+
+            if ($sbuCode) {
+                $linesQuery->where('entries.sbu_code', $sbuCode);
+            }
+            if ($startDate) {
+                $linesQuery->where('entries.date', '>=', $startDate);
+            }
+            if ($endDate) {
+                $linesQuery->where('entries.date', '<=', $endDate);
             }
 
-            // 2. Fetch lines within period
-            $linesQuery = JournalEntryLine::query()
-                ->where('account_id', $account->id)
-                ->whereHas('journalEntry', function ($q) use ($sbuCode, $startDate, $endDate) {
-                    $q->where('status', JvStatus::POSTED);
-                    if ($sbuCode) {
-                        $q->where('sbu_code', $sbuCode);
-                    }
-                    if ($startDate) {
-                        $q->where('date', '>=', $startDate);
-                    }
-                    if ($endDate) {
-                        $q->where('date', '<=', $endDate);
-                    }
-                });
+            $linesQuery->orderBy('entries.date')->orderBy('entries.entry_number');
 
-            $periodDebits = (float) (clone $linesQuery)->where('type', 'debit')->sum('amount');
-            $periodCredits = (float) (clone $linesQuery)->where('type', 'credit')->sum('amount');
+            $totalCount = 0;
+            if ($perPage) {
+                $totalCount = $linesQuery->count();
+                $page = $page ?: 1;
+                $linesQuery->skip(($page - 1) * $perPage)->take($perPage);
+            }
 
-            // 3. Calculate Running Balance for details
-            $lines = $linesQuery->with('journalEntry')->get();
+            $lines = $linesQuery->get();
             $runningBalance = $openingBalance;
             $formattedEntries = [];
 
@@ -116,20 +224,18 @@ class LedgerEngine
                 }
 
                 $formattedEntries[] = [
-                    'line_id'         => $line->id,
-                    'date'            => $line->journalEntry->date->format('Y-m-d'),
-                    'entry_number'    => $line->journalEntry->entry_number,
-                    'reference'       => $line->journalEntry->reference,
-                    'description'     => $line->description ?? $line->journalEntry->description,
+                    'line_id'         => $line->line_id,
+                    'date'            => is_string($line->date) ? $line->date : $line->date->format('Y-m-d'),
+                    'entry_number'    => $line->entry_number,
+                    'reference'       => $line->reference,
+                    'description'     => $line->line_description ?? $line->entry_description,
                     'type'            => $line->type,
                     'amount'          => $amt,
                     'running_balance' => $runningBalance,
                 ];
             }
 
-            $closingBalance = $account->getCurrentBalance(false, $sbuCode, null, $endDate);
-
-            $report[] = [
+            $reportItem = [
                 'account'          => $account,
                 'opening_balance'  => $openingBalance,
                 'period_debits'    => $periodDebits,
@@ -137,6 +243,17 @@ class LedgerEngine
                 'closing_balance'  => $closingBalance,
                 'entries'          => $formattedEntries,
             ];
+
+            if ($perPage) {
+                $reportItem['pagination'] = [
+                    'total' => $totalCount,
+                    'per_page' => $perPage,
+                    'current_page' => $page,
+                    'last_page' => (int) ceil($totalCount / $perPage),
+                ];
+            }
+
+            $report[] = $reportItem;
         }
 
         return ['accounts' => $report];
@@ -151,12 +268,15 @@ class LedgerEngine
         ?string $sbuCode = null
     ): array {
         $accounts = Account::where('is_active', true)->get();
+        $accountIds = $accounts->pluck('id')->toArray();
+        $balances = $this->getBalancesForAccounts($accountIds, $sbuCode, $startDate, $endDate);
+
         $report = [];
         $totalDebits = 0.0;
         $totalCredits = 0.0;
 
         foreach ($accounts as $account) {
-            $balance = $account->getCurrentBalance(false, $sbuCode, $startDate, $endDate);
+            $balance = $balances[$account->id] ?? 0.0;
             if ($balance == 0.0) {
                 continue;
             }
@@ -206,6 +326,8 @@ class LedgerEngine
     public function getBalanceSheet(string $date, ?string $sbuCode = null): array
     {
         $accounts = Account::where('is_active', true)->get();
+        $accountIds = $accounts->pluck('id')->toArray();
+        $balances = $this->getBalancesForAccounts($accountIds, $sbuCode, null, $date);
         
         $assets = [];
         $liabilities = [];
@@ -216,7 +338,7 @@ class LedgerEngine
         $totalEquity = 0.0;
 
         foreach ($accounts as $account) {
-            $balance = $account->getCurrentBalance(false, $sbuCode, null, $date);
+            $balance = $balances[$account->id] ?? 0.0;
             if ($balance == 0.0) {
                 continue;
             }
@@ -257,6 +379,8 @@ class LedgerEngine
     public function getIncomeStatement(string $startDate, string $endDate, ?string $sbuCode = null): array
     {
         $accounts = Account::where('is_active', true)->get();
+        $accountIds = $accounts->pluck('id')->toArray();
+        $balances = $this->getBalancesForAccounts($accountIds, $sbuCode, $startDate, $endDate);
         
         $revenue = [];
         $expenses = [];
@@ -265,7 +389,7 @@ class LedgerEngine
         $totalExpenses = 0.0;
 
         foreach ($accounts as $account) {
-            $balance = $account->getCurrentBalance(false, $sbuCode, $startDate, $endDate);
+            $balance = $balances[$account->id] ?? 0.0;
             if ($balance == 0.0) {
                 continue;
             }
@@ -314,6 +438,14 @@ class LedgerEngine
 
         // Load all active accounts
         $accounts = Account::where('is_active', true)->get();
+        $accountIds = $accounts->pluck('id')->toArray();
+
+        // Optimized bulk queries for opening and closing balances
+        $balancesStart = $this->getBalancesForAccounts($accountIds, $sbuCode, null, $dayBeforeStart);
+        $balancesEnd = $this->getBalancesForAccounts($accountIds, $sbuCode, null, $endDate);
+        
+        // Also get period balances for non-cash expenses (like depreciation)
+        $balancesPeriod = $this->getBalancesForAccounts($accountIds, $sbuCode, $startDate, $endDate);
 
         $operatingAdjustments = [];
         $investingAdjustments = [];
@@ -332,15 +464,15 @@ class LedgerEngine
             }
 
             // Calculate change in balance: Balance(End) - Balance(Before Start)
-            $balStart = $account->getCurrentBalance(false, $sbuCode, null, $dayBeforeStart);
-            $balEnd = $account->getCurrentBalance(false, $sbuCode, null, $endDate);
+            $balStart = $balancesStart[$account->id] ?? 0.0;
+            $balEnd = $balancesEnd[$account->id] ?? 0.0;
             $change = $balEnd - $balStart;
 
             // Classification of adjustments:
             if ($account->type === AccountType::EXPENSE && in_array($code, $nonCashExpenseCodes)) {
                 // Non-cash expense (e.g. depreciation):
                 // We add back the period expense (not the balance change)
-                $periodExpense = $account->getCurrentBalance(false, $sbuCode, $startDate, $endDate);
+                $periodExpense = $balancesPeriod[$account->id] ?? 0.0;
                 if ($periodExpense != 0.0) {
                     $operatingAdjustments[] = [
                         'account_id' => $account->id,
@@ -433,8 +565,8 @@ class LedgerEngine
 
         $cashAccounts = Account::whereIn('code', $cashCodes)->get();
         foreach ($cashAccounts as $cashAccount) {
-            $startBal = $cashAccount->getCurrentBalance(false, $sbuCode, null, $dayBeforeStart);
-            $endBal = $cashAccount->getCurrentBalance(false, $sbuCode, null, $endDate);
+            $startBal = $balancesStart[$cashAccount->id] ?? 0.0;
+            $endBal = $balancesEnd[$cashAccount->id] ?? 0.0;
             $beginningCash += $startBal;
             $endingCash += $endBal;
 

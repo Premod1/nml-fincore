@@ -117,6 +117,15 @@ try {
 }
 ```
 
+#### Parameter Details
+
+* **`type`**: Indicates the category of the journal entry. Developers should use the `Nml\FinCore\Enums\JvType` enum:
+  * `JvType::GENERAL->value` (`'general'`): Normal business transactions (e.g., sales invoices, supplier purchases, payments).
+  * `JvType::ADJUSTMENT->value` (`'adjustment'`): End-of-period adjustments (e.g., depreciation, accruals, prepayments).
+  * `JvType::CLOSING->value` (`'closing'`): Year-end closing entries to reset revenue/expense balances to the retained earnings account.
+* **`sbu_code`**: Strategic Business Unit (Branch, Department, or Division) code. Tagging entries with this code enables department-wise or branch-wise filtering on all financial statements.
+* **`journalable_type` & `journalable_id`**: Polymorphic relationship columns that map this journal entry to the source document in the ERP (e.g., `App\Models\Invoice` or `App\Models\Payment`). This provides an audit trail back to the originating business transaction.
+
 ### 2. Generating a Trial Balance
 
 Generate a Trial Balance report within a specific date range or filter by SBU.
@@ -176,7 +185,41 @@ $equity = $balanceSheet['equity']['total'];
 $isBalanced = $balanceSheet['is_balanced']; // Assets = Liabilities + Equity
 ```
 
-### 5. Generating a Cash Flow Statement
+### 5. Generating a General Ledger (Account Ledger)
+
+Generate a detailed General Ledger report for a specific account, supporting memory-efficient pagination for large datasets:
+
+```php
+use Nml\FinCore\Facades\FinCore;
+
+$ledger = FinCore::getGeneralLedger(
+    accountId: 3, // Accounts Receivable
+    startDate: '2026-01-01',
+    endDate: '2026-06-30',
+    sbuCode: 'COLOMBO_SBU',
+    perPage: 50,  // Optional pagination limit
+    page: 1       // Optional page number
+);
+
+foreach ($ledger['accounts'] as $accountReport) {
+    $account = $accountReport['account']; // Account model instance
+    $openingBalance = $accountReport['opening_balance'];
+    $closingBalance = $accountReport['closing_balance'];
+    
+    // Pagination metadata (only returned if perPage is specified)
+    $pagination = $accountReport['pagination'] ?? null;
+    
+    foreach ($accountReport['entries'] as $entry) {
+        $entryNumber = $entry['entry_number'];
+        $date = $entry['date'];
+        $type = $entry['type']; // 'debit' or 'credit'
+        $amount = $entry['amount'];
+        $runningBalance = $entry['running_balance'];
+    }
+}
+```
+
+### 6. Generating a Cash Flow Statement
 
 Generate a Cash Flow statement (indirect method) for a date range:
 
@@ -197,7 +240,7 @@ $endingCash = $cashFlow['ending_cash'];
 $isReconciled = $cashFlow['is_reconciled']; // true if beginningCash + netIncreaseDecrease matches endingCash
 ```
 
-### 6. Managing Entry Statuses
+### 7. Managing Entry Statuses
 
 Transitions draft entries to submitted, and void or reject them:
 
