@@ -3,6 +3,14 @@
     "description": "NML FinCore - Robust Double-Entry Accounting Engine for Laravel ERPs",
     "type": "library",
     "license": "MIT",
+    "authors": [
+        {
+            "name": "Pramod Suraweera",
+            "email": "premodsuraweera1@gmail.com",
+            "homepage": "https://premod.me/"
+        }
+    ],
+    "homepage": "https://premod.me/",
     "autoload": {
         "psr-4": {
             "Nml\\FinCore\\": "src/"
