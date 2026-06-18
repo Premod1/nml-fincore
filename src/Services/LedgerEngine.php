@@ -819,4 +819,14 @@ class LedgerEngine
     {
         return (new FiscalYearClosingEngine())->closeFiscalYear($fiscalYearId, $retainedEarningsAccountId, $userId);
     }
+
+    /**
+     * Retrieve the audit history / activity log for a specific journal entry.
+     */
+    public function getAuditHistory(int $journalEntryId): \Illuminate\Support\Collection
+    {
+        return \Nml\FinCore\Models\AuditLog::where('journal_entry_id', $journalEntryId)
+            ->orderBy('created_at', 'asc')
+            ->get();
+    }
 }

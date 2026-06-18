@@ -175,4 +175,47 @@ class JournalEntry extends Model
     {
         return (float) $this->lines()->where('type', 'credit')->sum('amount');
     }
+
+    protected static function booted(): void
+    {
+        static::created(function (JournalEntry $entry) {
+            \Nml\FinCore\Services\AuditLogService::log(
+                action: 'created',
+                journalEntryId: $entry->id,
+                newValues: $entry->toArray(),
+                userId: $entry->created_by ?? (auth()->check() ? auth()->id() : null)
+            );
+        });
+
+        static::updated(function (JournalEntry $entry) {
+            $dirty = $entry->getDirty();
+            if (empty($dirty)) {
+                return;
+            }
+
+            $old = array_intersect_key($entry->getOriginal(), $dirty);
+
+            $action = 'updated';
+            if (isset($dirty['status'])) {
+                $action = $entry->status instanceof \BackedEnum ? $entry->status->value : (string) $entry->status;
+            }
+
+            \Nml\FinCore\Services\AuditLogService::log(
+                action: $action,
+                journalEntryId: $entry->id,
+                oldValues: $old,
+                newValues: $dirty,
+                userId: auth()->check() ? auth()->id() : ($entry->approved_by ?? $entry->submitted_by)
+            );
+        });
+
+        static::deleted(function (JournalEntry $entry) {
+            \Nml\FinCore\Services\AuditLogService::log(
+                action: 'deleted',
+                journalEntryId: $entry->id,
+                oldValues: $entry->toArray(),
+                userId: auth()->check() ? auth()->id() : null
+            );
+        });
+    }
 }

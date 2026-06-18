@@ -566,4 +566,27 @@ $closingEntry = FinCore::closeFiscalYear(
     userId: 1 // Optional user ID of the approver
 );
 ```
+
+---
+
+### 14. Audit Trail / Activity Log
+
+#### Retrieving Audit History
+The engine automatically logs all creations, updates, state changes (`submitted`, `posted`, `voided`), and deletions of journal entries. This includes capturing the actor's user ID, IP address, user agent, action type, and a JSON diff of modified attributes (`old_values` vs `new_values`).
+
+Retrieve the history for any journal entry:
+```php
+use Nml\FinCore\Facades\FinCore;
+
+$logs = FinCore::getAuditHistory($journalEntryId);
+
+foreach ($logs as $log) {
+    Log::info("Action: " . $log->action);
+    Log::info("Performed by User: " . $log->user_id);
+    Log::info("IP: " . $log->ip_address);
+    Log::info("User Agent: " . $log->user_agent);
+    Log::info("Old State: ", (array) $log->old_values);
+    Log::info("New State: ", (array) $log->new_values);
+}
+```
 ```

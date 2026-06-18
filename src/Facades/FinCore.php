@@ -25,6 +25,7 @@ use Illuminate\Support\Facades\Facade;
  * @method static array getReceivablesAgeingReport(string $asOfDate)
  * @method static array getPayablesAgeingReport(string $asOfDate)
  * @method static \Nml\FinCore\Models\JournalEntry|null closeFiscalYear(int $fiscalYearId, int $retainedEarningsAccountId, ?int $userId = null)
+ * @method static \Illuminate\Support\Collection getAuditHistory(int $journalEntryId)
  * 
  * @see \Nml\FinCore\Services\LedgerEngine
  */
