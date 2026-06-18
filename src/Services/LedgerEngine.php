@@ -689,4 +689,49 @@ class LedgerEngine
             'reconciled_difference' => $reconciledDiff,
         ];
     }
+
+    /**
+     * Calculate depreciation amount for a specific asset for one month.
+     */
+    public function calculateMonthlyDepreciation(\Nml\FinCore\Models\FixedAsset $asset, string $date): float
+    {
+        return (new DepreciationEngine())->calculateMonthlyDepreciation($asset, $date);
+    }
+
+    /**
+     * Calculate and post depreciation for a single asset.
+     */
+    public function postDepreciationForAsset(int $assetId, string $date): ?\Nml\FinCore\Models\JournalEntry
+    {
+        return (new DepreciationEngine())->postDepreciationForAsset($assetId, $date);
+    }
+
+    /**
+     * Post depreciation for all active fixed assets.
+     */
+    public function postDepreciationForAllActiveAssets(string $date): array
+    {
+        return (new DepreciationEngine())->postDepreciationForAllActiveAssets($date);
+    }
+
+    /**
+     * Set or update monthly budget target for an account.
+     */
+    public function setMonthlyBudget(
+        int $accountId,
+        int $year,
+        int $month,
+        float $amount,
+        ?string $sbuCode = null
+    ): \Nml\FinCore\Models\Budget {
+        return (new BudgetEngine())->setMonthlyBudget($accountId, $year, $month, $amount, $sbuCode);
+    }
+
+    /**
+     * Get Budget vs Actual variance report for a specific month.
+     */
+    public function getBudgetVarianceReport(int $year, int $month, ?string $sbuCode = null): array
+    {
+        return (new BudgetEngine())->getBudgetVarianceReport($year, $month, $sbuCode);
+    }
 }

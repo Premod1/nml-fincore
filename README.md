@@ -310,3 +310,84 @@ $entry = FinCore::createJournalEntry([
 // Post to ledger. Validates balancing in both USD (115.00) and LKR (34500.00).
 $entry->post();
 ```
+
+### 9. Fixed Assets & Depreciation
+
+#### Registering a Fixed Asset
+Register a fixed asset with purchase costs, depreciation parameters, and its target ledger accounts:
+
+```php
+use Nml\FinCore\Models\FixedAsset;
+
+$asset = FixedAsset::create([
+    'name' => 'Delivery Van',
+    'code' => 'FA-VAN-001',
+    'purchase_date' => '2026-01-01',
+    'purchase_cost' => 2400000.00,
+    'salvage_value' => 400000.00,
+    'useful_life_years' => 5,
+    'depreciation_method' => 'straight_line', // 'straight_line' or 'reducing_balance'
+    'depreciation_rate' => 20.00, // 20% annual rate
+    'asset_account_id' => 5, // Motor Vehicles cost account
+    'accumulated_depreciation_account_id' => 6, // Accumulated Depreciation account
+    'depreciation_expense_account_id' => 25, // Depreciation Expense account
+    'status' => 'active'
+]);
+```
+
+#### Calculating and Posting Depreciation
+Calculate monthly depreciation for a specific asset or all active assets, which automatically creates and posts the corresponding double-entry journal:
+
+```php
+use Nml\FinCore\Facades\FinCore;
+
+// 1. Calculate the monthly depreciation amount for a specific asset
+$amount = FinCore::calculateMonthlyDepreciation($asset, '2026-06-30');
+
+// 2. Post depreciation for a specific asset (Creates Debit Depreciation Expense, Credit Accumulated Depreciation)
+$entry = FinCore::postDepreciationForAsset($asset->id, '2026-06-30');
+
+// 3. Post monthly depreciation for all active fixed assets in bulk
+$results = FinCore::postDepreciationForAllActiveAssets('2026-06-30');
+```
+
+---
+
+### 10. Budgeting & Variance Reporting
+
+#### Setting Monthly Budget Targets
+Set a target monthly budget amount for a specific account and SBU:
+
+```php
+use Nml\FinCore\Facades\FinCore;
+
+$budget = FinCore::setMonthlyBudget(
+    accountId: 25, // Depreciation Expense account
+    year: 2026,
+    month: 6,
+    amount: 40000.00,
+    sbuCode: 'COLOMBO_SBU' // Optional
+);
+```
+
+#### Generating a Budget vs. Actual Variance Report
+Fetch target budgets, actual ledger movements, and variance details for a specific month:
+
+```php
+use Nml\FinCore\Facades\FinCore;
+
+$report = FinCore::getBudgetVarianceReport(
+    year: 2026,
+    month: 6,
+    sbuCode: 'COLOMBO_SBU' // Optional
+);
+
+foreach ($report as $row) {
+    $accountName = $row['account_name'];
+    $budgetAmount = $row['budget_amount'];
+    $actualAmount = $row['actual_amount'];
+    $variance = $row['variance']; // Positive is Favorable, Negative is Unfavorable
+    $variancePercentage = $row['variance_percentage'];
+    $status = $row['status']; // 'Favorable' or 'Unfavorable'
+}
+```
