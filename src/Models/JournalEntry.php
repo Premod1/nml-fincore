@@ -1,0 +1,144 @@
+<?php
+
+namespace Nml\FinCore\Models;
+
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\MorphTo;
+use Nml\FinCore\Enums\JvStatus;
+use Nml\FinCore\Enums\JvType;
+use Nml\FinCore\Exceptions\AccountingException;
+
+class JournalEntry extends Model
+{
+    protected $fillable = [
+        'entry_number',
+        'date',
+        'reference',
+        'type',
+        'description',
+        'status',
+        'sbu_code',
+        'journalable_type',
+        'journalable_id',
+        'created_by',
+        'submitted_by',
+        'approved_by',
+        'submitted_at',
+        'approved_at',
+        'reviewer_note',
+    ];
+
+    protected $casts = [
+        'status' => JvStatus::class,
+        'type' => JvType::class,
+        'date' => 'date',
+        'submitted_at' => 'datetime',
+        'approved_at' => 'datetime',
+    ];
+
+    public function getTable()
+    {
+        return config('accounting.table_prefix', 'fincore_') . 'journal_entries';
+    }
+
+    public function lines(): HasMany
+    {
+        return $this->hasMany(JournalEntryLine::class);
+    }
+
+    public function journalable(): MorphTo
+    {
+        return $this->morphTo();
+    }
+
+    /**
+     * Submit draft for approval.
+     */
+    public function submit(?int $userId = null): void
+    {
+        if ($this->status !== JvStatus::DRAFT) {
+            throw new AccountingException("Only draft entries can be submitted.");
+        }
+
+        $this->update([
+            'status' => JvStatus::SUBMITTED,
+            'submitted_by' => $userId ?? auth()->id(),
+            'submitted_at' => now(),
+        ]);
+    }
+
+    /**
+     * Post entry to General Ledger.
+     */
+    public function post(bool $bypassPeriodLock = false, ?int $userId = null): void
+    {
+        if (in_array($this->status, [JvStatus::POSTED, JvStatus::VOID])) {
+            throw new AccountingException("Cannot post an entry that is already posted or voided.");
+        }
+
+        // 1. Enforce debit-credit balance
+        $tolerance = (float) config('accounting.rounding_tolerance', 0.005);
+        $diff = abs($this->getDebitSum() - $this->getCreditSum());
+        if ($diff > $tolerance) {
+            throw new AccountingException("Debits ({$this->getDebitSum()}) and Credits ({$this->getCreditSum()}) must match within tolerance ({$tolerance}). Difference is {$diff}.");
+        }
+
+        // 2. Enforce Period Lock
+        if (!$bypassPeriodLock && config('accounting.enforce_period_lock', true)) {
+            $isClosed = FiscalPeriod::where('start_date', '<=', $this->date)
+                ->where('end_date', '>=', $this->date)
+                ->where('is_closed', true)
+                ->exists();
+
+            if ($isClosed) {
+                throw new AccountingException("Cannot post to a closed accounting period. Date: " . $this->date->format('Y-m-d'));
+            }
+        }
+
+        $this->update([
+            'status' => JvStatus::POSTED,
+            'approved_by' => $userId ?? auth()->id(),
+            'approved_at' => now(),
+        ]);
+    }
+
+    /**
+     * Reject submitted entry and return to draft.
+     */
+    public function returnToDraft(string $note): void
+    {
+        if ($this->status !== JvStatus::SUBMITTED) {
+            throw new AccountingException("Only submitted entries can be returned to draft.");
+        }
+
+        $this->update([
+            'status' => JvStatus::DRAFT,
+            'reviewer_note' => $note,
+        ]);
+    }
+
+    /**
+     * Void a posted or submitted entry.
+     */
+    public function void(): void
+    {
+        if ($this->status === JvStatus::VOID) {
+            return;
+        }
+
+        $this->update([
+            'status' => JvStatus::VOID,
+        ]);
+    }
+
+    public function getDebitSum(): float
+    {
+        return (float) $this->lines()->where('type', 'debit')->sum('amount');
+    }
+
+    public function getCreditSum(): float
+    {
+        return (float) $this->lines()->where('type', 'credit')->sum('amount');
+    }
+}
