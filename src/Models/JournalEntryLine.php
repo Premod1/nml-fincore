@@ -17,6 +17,9 @@ class JournalEntryLine extends Model
         'description',
         'cleared_at',
         'bank_reconciliation_id',
+        'due_date',
+        'partnerable_type',
+        'partnerable_id',
     ];
 
     protected $casts = [
@@ -24,6 +27,7 @@ class JournalEntryLine extends Model
         'fc_amount' => 'float',
         'tax_id' => 'integer',
         'cleared_at' => 'datetime',
+        'due_date' => 'date',
     ];
 
     public function getTable()
@@ -49,5 +53,10 @@ class JournalEntryLine extends Model
     public function tax(): BelongsTo
     {
         return $this->belongsTo(Tax::class);
+    }
+
+    public function partnerable(): \Illuminate\Database\Eloquent\Relations\MorphTo
+    {
+        return $this->morphTo();
     }
 }

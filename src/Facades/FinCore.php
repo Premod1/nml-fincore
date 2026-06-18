@@ -22,6 +22,8 @@ use Illuminate\Support\Facades\Facade;
  * @method static \Nml\FinCore\Models\JournalEntryLine manuallyClearLine(int $reconciliationId, int $lineId, string $clearedAt)
  * @method static \Nml\FinCore\Models\JournalEntryLine unclearLine(int $lineId)
  * @method static \Nml\FinCore\Models\BankReconciliation finalizeReconciliation(int $reconciliationId)
+ * @method static array getReceivablesAgeingReport(string $asOfDate)
+ * @method static array getPayablesAgeingReport(string $asOfDate)
  * 
  * @see \Nml\FinCore\Services\LedgerEngine
  */

@@ -152,22 +152,28 @@ class LedgerEngine
 
                             // Push base line
                             $processedLines[] = [
-                                'account_id'  => $line['account_id'],
-                                'type'        => $line['type'],
-                                'amount'      => $amount,
-                                'fc_amount'   => $fcAmount,
-                                'tax_id'      => $taxId,
-                                'description' => $line['description'] ?? null,
+                                'account_id'       => $line['account_id'],
+                                'type'             => $line['type'],
+                                'amount'           => $amount,
+                                'fc_amount'        => $fcAmount,
+                                'tax_id'           => $taxId,
+                                'description'      => $line['description'] ?? null,
+                                'due_date'         => $line['due_date'] ?? null,
+                                'partnerable_type' => $line['partnerable_type'] ?? null,
+                                'partnerable_id'   => $line['partnerable_id'] ?? null,
                             ];
 
                             // Push automatic tax line
                             $processedLines[] = [
-                                'account_id'  => $tax->account_id,
-                                'type'        => $line['type'],
-                                'amount'      => $taxAmount,
-                                'fc_amount'   => $fcTaxAmount,
-                                'tax_id'      => $taxId,
-                                'description' => "Tax (" . $tax->name . ") calculated for " . ($line['description'] ?? 'base transaction'),
+                                'account_id'       => $tax->account_id,
+                                'type'             => $line['type'],
+                                'amount'           => $taxAmount,
+                                'fc_amount'        => $fcTaxAmount,
+                                'tax_id'           => $taxId,
+                                'description'      => "Tax (" . $tax->name . ") calculated for " . ($line['description'] ?? 'base transaction'),
+                                'due_date'         => $line['due_date'] ?? null,
+                                'partnerable_type' => $line['partnerable_type'] ?? null,
+                                'partnerable_id'   => $line['partnerable_id'] ?? null,
                             ];
 
                             continue;
@@ -176,12 +182,15 @@ class LedgerEngine
 
                     // Push standard line
                     $processedLines[] = [
-                        'account_id'  => $line['account_id'],
-                        'type'        => $line['type'],
-                        'amount'      => $amount,
-                        'fc_amount'   => $fcAmount,
-                        'tax_id'      => null,
-                        'description' => $line['description'] ?? null,
+                        'account_id'       => $line['account_id'],
+                        'type'             => $line['type'],
+                        'amount'           => $amount,
+                        'fc_amount'        => $fcAmount,
+                        'tax_id'           => null,
+                        'description'      => $line['description'] ?? null,
+                        'due_date'         => $line['due_date'] ?? null,
+                        'partnerable_type' => $line['partnerable_type'] ?? null,
+                        'partnerable_id'   => $line['partnerable_id'] ?? null,
                     ];
                 }
             }
@@ -785,5 +794,21 @@ class LedgerEngine
     public function finalizeReconciliation(int $reconciliationId): \Nml\FinCore\Models\BankReconciliation
     {
         return (new BankReconciliationEngine())->finalizeReconciliation($reconciliationId);
+    }
+
+    /**
+     * Generate an ageing report for Accounts Receivable.
+     */
+    public function getReceivablesAgeingReport(string $asOfDate): array
+    {
+        return (new PartnerAgeingEngine())->getReceivablesAgeingReport($asOfDate);
+    }
+
+    /**
+     * Generate an ageing report for Accounts Payable.
+     */
+    public function getPayablesAgeingReport(string $asOfDate): array
+    {
+        return (new PartnerAgeingEngine())->getPayablesAgeingReport($asOfDate);
     }
 }

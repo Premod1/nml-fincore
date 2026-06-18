@@ -454,4 +454,61 @@ FinCore::manuallyClearLine($reconciliation->id, $lineId = 42, '2026-06-25');
 // Finalize and close the reconciliation statement
 FinCore::finalizeReconciliation($reconciliation->id);
 ```
+
+---
+
+### 12. Accounts Receivable (AR) & Accounts Payable (AP) Ageing Reports
+
+#### Recording Entries with Partner Metadata
+To track receivables and payables per customer or vendor, pass the polymorphic `partnerable` object and optional `due_date` when creating double-entry records:
+
+```php
+use Nml\FinCore\Facades\FinCore;
+
+// Create sales invoice entry with partner tracking
+$entry = FinCore::createJournalEntry([
+    'date' => '2026-06-01',
+    'reference' => 'INV-2026-001',
+    'lines' => [
+        [
+            'account_id' => 3, // Accounts Receivable (Receivable type)
+            'type' => 'debit',
+            'amount' => 120000.00,
+            'due_date' => '2026-06-30',
+            'partnerable_type' => 'App\Models\Customer',
+            'partnerable_id' => 105,
+            'description' => 'Sales invoice for Customer #105'
+        ],
+        [
+            'account_id' => 20, // Sales Revenue
+            'type' => 'credit',
+            'amount' => 120000.00
+        ]
+    ]
+]);
+$entry->post();
+```
+
+#### Generating Ageing Reports
+Fetch the ageing analysis report for all partners. The engine allocates credits against debits using a FIFO (First In, First Out) algorithm and classifies outstanding amounts into age buckets based on the `due_date`:
+
+```php
+use Nml\FinCore\Facades\FinCore;
+
+// 1. Get Accounts Receivable Ageing Report
+$arReport = FinCore::getReceivablesAgeingReport('2026-06-30');
+
+// 2. Get Accounts Payable Ageing Report
+$apReport = FinCore::getPayablesAgeingReport('2026-06-30');
+
+foreach ($arReport as $row) {
+    $partnerName = $row['partner_name'];
+    $totalOutstanding = $row['total_outstanding'];
+    $current = $row['current'];       // Not due yet
+    $bucket1 = $row['1_30'];          // 1 - 30 days overdue
+    $bucket2 = $row['31_60'];         // 31 - 60 days overdue
+    $bucket3 = $row['61_90'];         // 61 - 90 days overdue
+    $bucket4 = $row['91_plus'];       // 91+ days overdue
+}
+```
 ```
