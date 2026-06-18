@@ -391,3 +391,67 @@ foreach ($report as $row) {
     $status = $row['status']; // 'Favorable' or 'Unfavorable'
 }
 ```
+
+---
+
+### 11. Bank Reconciliation Matcher
+
+#### Starting a Bank Reconciliation Statement
+Create a bank reconciliation session for a specific bank ledger account, date, opening and closing balance:
+
+```php
+use Nml\FinCore\Facades\FinCore;
+
+$reconciliation = FinCore::createReconciliation(
+    accountId: 1, // Bank Account
+    statementDate: '2026-06-30',
+    openingBalance: 150000.00,
+    closingBalance: 185000.00
+);
+```
+
+#### Fetching Unreconciled Ledger Lines
+Get all posted journal entry lines for this account that remain uncleared:
+
+```php
+use Nml\FinCore\Facades\FinCore;
+
+$unreconciled = FinCore::getUnreconciledLines(
+    accountId: 1,
+    endDate: '2026-06-30'
+);
+```
+
+#### Running the Auto-Matcher
+Match uploaded bank statement transactions against unreconciled ledger entries automatically. The engine matches based on exact amount, type (debit/credit), and transaction date differences:
+
+```php
+use Nml\FinCore\Facades\FinCore;
+
+$statementTransactions = [
+    ['date' => '2026-06-10', 'amount' => 5000.00, 'type' => 'debit', 'reference' => 'TXN-1'],
+    ['date' => '2026-06-15', 'amount' => 30000.00, 'type' => 'credit', 'reference' => 'TXN-2'],
+];
+
+$results = FinCore::autoMatchStatementTransactions(
+    reconciliationId: $reconciliation->id,
+    statementTransactions: $statementTransactions
+);
+
+$matched = $results['matched'];     // List of successfully matched items
+$unmatched = $results['unmatched']; // List of bank statement items not found in ledger
+```
+
+#### Manual Clear and Finalization
+Reconcile lines manually or finalize the statement. Finalization requires the cleared balance to match the statement closing balance perfectly:
+
+```php
+use Nml\FinCore\Facades\FinCore;
+
+// Manually clear a ledger line
+FinCore::manuallyClearLine($reconciliation->id, $lineId = 42, '2026-06-25');
+
+// Finalize and close the reconciliation statement
+FinCore::finalizeReconciliation($reconciliation->id);
+```
+```

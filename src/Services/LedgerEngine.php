@@ -734,4 +734,56 @@ class LedgerEngine
     {
         return (new BudgetEngine())->getBudgetVarianceReport($year, $month, $sbuCode);
     }
+
+    /**
+     * Create a new Bank Reconciliation statement record.
+     */
+    public function createReconciliation(
+        int $accountId,
+        string $statementDate,
+        float $openingBalance,
+        float $closingBalance
+    ): \Nml\FinCore\Models\BankReconciliation {
+        return (new BankReconciliationEngine())->createReconciliation($accountId, $statementDate, $openingBalance, $closingBalance);
+    }
+
+    /**
+     * Get all unreconciled posted ledger lines for a bank account.
+     */
+    public function getUnreconciledLines(int $accountId, string $endDate): \Illuminate\Support\Collection
+    {
+        return (new BankReconciliationEngine())->getUnreconciledLines($accountId, $endDate);
+    }
+
+    /**
+     * Automatically match statement transactions with unreconciled ledger lines.
+     */
+    public function autoMatchStatementTransactions(int $reconciliationId, array $statementTransactions): array
+    {
+        return (new BankReconciliationEngine())->autoMatchStatementTransactions($reconciliationId, $statementTransactions);
+    }
+
+    /**
+     * Manually link a ledger line to the reconciliation statement.
+     */
+    public function manuallyClearLine(int $reconciliationId, int $lineId, string $clearedAt): \Nml\FinCore\Models\JournalEntryLine
+    {
+        return (new BankReconciliationEngine())->manuallyClearLine($reconciliationId, $lineId, $clearedAt);
+    }
+
+    /**
+     * Unlink a ledger line from reconciliation.
+     */
+    public function unclearLine(int $lineId): \Nml\FinCore\Models\JournalEntryLine
+    {
+        return (new BankReconciliationEngine())->unclearLine($lineId);
+    }
+
+    /**
+     * Finalize reconciliation by validating statement balances.
+     */
+    public function finalizeReconciliation(int $reconciliationId): \Nml\FinCore\Models\BankReconciliation
+    {
+        return (new BankReconciliationEngine())->finalizeReconciliation($reconciliationId);
+    }
 }

@@ -16,6 +16,12 @@ use Illuminate\Support\Facades\Facade;
  * @method static array postDepreciationForAllActiveAssets(string $date)
  * @method static \Nml\FinCore\Models\Budget setMonthlyBudget(int $accountId, int $year, int $month, float $amount, ?string $sbuCode = null)
  * @method static array getBudgetVarianceReport(int $year, int $month, ?string $sbuCode = null)
+ * @method static \Nml\FinCore\Models\BankReconciliation createReconciliation(int $accountId, string $statementDate, float $openingBalance, float $closingBalance)
+ * @method static \Illuminate\Support\Collection getUnreconciledLines(int $accountId, string $endDate)
+ * @method static array autoMatchStatementTransactions(int $reconciliationId, array $statementTransactions)
+ * @method static \Nml\FinCore\Models\JournalEntryLine manuallyClearLine(int $reconciliationId, int $lineId, string $clearedAt)
+ * @method static \Nml\FinCore\Models\JournalEntryLine unclearLine(int $lineId)
+ * @method static \Nml\FinCore\Models\BankReconciliation finalizeReconciliation(int $reconciliationId)
  * 
  * @see \Nml\FinCore\Services\LedgerEngine
  */
