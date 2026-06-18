@@ -117,6 +117,39 @@ try {
 }
 ```
 
+#### 1.1. Creating a Manual Journal Voucher (JV)
+For manual journal adjustments entered by accountants via a voucher UI, collect the form inputs (rows with Account, Type, Debit/Credit, and optional Notes) and post them directly:
+
+```php
+use Nml\FinCore\Facades\FinCore;
+use Nml\FinCore\Enums\JvType;
+
+// Map the dynamic rows of a manual JV interface to the lines array:
+$entry = FinCore::createJournalEntry([
+    'date' => '2026-06-18',
+    'reference' => 'JV-2026-0045',
+    'type' => JvType::GENERAL->value,
+    'description' => 'Manual adjustment for prepaid rent',
+    'lines' => [
+        [
+            'account_id' => 12, // Prepaid Expense Account
+            'type' => 'debit',
+            'amount' => 15000.00, // Debit amount from Row 1
+            'description' => 'Amortization of rent'
+        ],
+        [
+            'account_id' => 25, // Rent Expense Account
+            'type' => 'credit',
+            'amount' => 15000.00, // Credit amount from Row 2
+            'description' => 'Corresponding rent credit'
+        ]
+    ]
+]);
+
+// Post to ledger
+$entry->post();
+```
+
 #### Parameter Details
 
 * **`type`**: Indicates the category of the journal entry. Developers should use the `Nml\FinCore\Enums\JvType` enum:
