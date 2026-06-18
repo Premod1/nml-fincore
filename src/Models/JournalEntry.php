@@ -99,13 +99,18 @@ class JournalEntry extends Model
 
         // 2. Enforce Period Lock
         if (!$bypassPeriodLock && config('accounting.enforce_period_lock', true)) {
-            $isClosed = FiscalPeriod::where('start_date', '<=', $this->date)
+            $isPeriodClosed = FiscalPeriod::where('start_date', '<=', $this->date)
                 ->where('end_date', '>=', $this->date)
                 ->where('is_closed', true)
                 ->exists();
 
-            if ($isClosed) {
-                throw new AccountingException("Cannot post to a closed accounting period. Date: " . $this->date->format('Y-m-d'));
+            $isYearClosed = FiscalYear::where('start_date', '<=', $this->date)
+                ->where('end_date', '>=', $this->date)
+                ->where('is_closed', true)
+                ->exists();
+
+            if ($isPeriodClosed || $isYearClosed) {
+                throw new AccountingException("Cannot post to a closed accounting period/year. Date: " . $this->date->format('Y-m-d'));
             }
         }
 
@@ -138,6 +143,22 @@ class JournalEntry extends Model
     {
         if ($this->status === JvStatus::VOID) {
             return;
+        }
+
+        if (config('accounting.enforce_period_lock', true)) {
+            $isPeriodClosed = FiscalPeriod::where('start_date', '<=', $this->date)
+                ->where('end_date', '>=', $this->date)
+                ->where('is_closed', true)
+                ->exists();
+
+            $isYearClosed = FiscalYear::where('start_date', '<=', $this->date)
+                ->where('end_date', '>=', $this->date)
+                ->where('is_closed', true)
+                ->exists();
+
+            if ($isPeriodClosed || $isYearClosed) {
+                throw new AccountingException("Cannot void an entry in a closed accounting period/year. Date: " . $this->date->format('Y-m-d'));
+            }
         }
 
         $this->update([

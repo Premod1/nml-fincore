@@ -811,4 +811,12 @@ class LedgerEngine
     {
         return (new PartnerAgeingEngine())->getPayablesAgeingReport($asOfDate);
     }
+
+    /**
+     * Close a fiscal year by resetting Revenue/Expense balances and locking the year.
+     */
+    public function closeFiscalYear(int $fiscalYearId, int $retainedEarningsAccountId, ?int $userId = null): ?\Nml\FinCore\Models\JournalEntry
+    {
+        return (new FiscalYearClosingEngine())->closeFiscalYear($fiscalYearId, $retainedEarningsAccountId, $userId);
+    }
 }

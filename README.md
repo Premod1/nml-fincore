@@ -544,4 +544,26 @@ foreach ($arReport as $row) {
     $bucket4 = $row['91_plus'];       // 91+ days overdue
 }
 ```
+
+---
+
+### 13. Fiscal Year-End Closing Engine
+
+#### Closing a Fiscal Year
+At the end of a fiscal year, close the year by calling `closeFiscalYear`. The engine automatically:
+1. Calculates the net balance of all Revenue and Expense accounts for that year.
+2. Generates and posts a closing journal entry on the last day of the fiscal year, transferring the net profit or loss to the specified Retained Earnings account.
+3. Sets the balance of all Revenue and Expense accounts to zero relative to the next period.
+4. Marks the `FiscalYear` and all its monthly `FiscalPeriod`s as closed, locking them against future postings or modifications.
+
+```php
+use Nml\FinCore\Facades\FinCore;
+
+// Close Fiscal Year ID 1, transferring net profit/loss to Retained Earnings Account ID 8
+$closingEntry = FinCore::closeFiscalYear(
+    fiscalYearId: 1,
+    retainedEarningsAccountId: 8,
+    userId: 1 // Optional user ID of the approver
+);
+```
 ```

@@ -24,6 +24,7 @@ use Illuminate\Support\Facades\Facade;
  * @method static \Nml\FinCore\Models\BankReconciliation finalizeReconciliation(int $reconciliationId)
  * @method static array getReceivablesAgeingReport(string $asOfDate)
  * @method static array getPayablesAgeingReport(string $asOfDate)
+ * @method static \Nml\FinCore\Models\JournalEntry|null closeFiscalYear(int $fiscalYearId, int $retainedEarningsAccountId, ?int $userId = null)
  * 
  * @see \Nml\FinCore\Services\LedgerEngine
  */
