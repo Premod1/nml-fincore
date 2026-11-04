@@ -38,10 +38,10 @@ class LedgerEngine
             $query->where('entries.sbu_code', $sbuCode);
         }
         if ($startDate) {
-            $query->where('entries.date', '>=', $startDate);
+            $query->where('entries.date', '>=', $this->normalizeStartDate($startDate));
         }
         if ($endDate) {
-            $query->where('entries.date', '<=', $endDate);
+            $query->where('entries.date', '<=', $this->normalizeEndDate($endDate));
         }
 
         $results = $query->select('lines.account_id')
@@ -83,9 +83,29 @@ class LedgerEngine
             $date = $data['date'] ?? now()->format('Y-m-d');
             $year = date('Y', strtotime($date));
 
-            // Generate entry number (JE-YYYY-00001)
-            $count = JournalEntry::whereYear('date', $year)->count() + 1;
-            $entryNumber = 'JE-' . $year . '-' . str_pad($count, 5, '0', STR_PAD_LEFT);
+            // Generate collision-free entry number (JE-YYYY-00001)
+            if (!empty($data['entry_number'])) {
+                $entryNumber = $data['entry_number'];
+            } else {
+                $latest = JournalEntry::whereYear('date', $year)
+                    ->where('entry_number', 'like', "JE-{$year}-%")
+                    ->orderByDesc('entry_number')
+                    ->lockForUpdate()
+                    ->first();
+
+                $nextSequence = 1;
+                if ($latest && preg_match('/JE-' . $year . '-(\d+)/', $latest->entry_number, $matches)) {
+                    $nextSequence = ((int) $matches[1]) + 1;
+                }
+
+                do {
+                    $entryNumber = 'JE-' . $year . '-' . str_pad($nextSequence, 5, '0', STR_PAD_LEFT);
+                    $exists = JournalEntry::where('entry_number', $entryNumber)->exists();
+                    if ($exists) {
+                        $nextSequence++;
+                    }
+                } while ($exists);
+            }
 
             $currency = $data['currency'] ?? config('accounting.currency', 'LKR');
             $exchangeRate = (float) ($data['exchange_rate'] ?? 1.0);
@@ -214,9 +234,16 @@ class LedgerEngine
         ?int $perPage = null,
         ?int $page = null
     ): array {
-        $accountsQuery = Account::query()->where('is_active', true);
+        $accountsQuery = Account::query()->where('is_active', true)->orderBy('code');
         if ($accountId) {
             $accountsQuery->where('id', $accountId);
+        }
+
+        $totalAccountsCount = null;
+        if (!$accountId && $perPage) {
+            $totalAccountsCount = (clone $accountsQuery)->count();
+            $accountPage = $page ?: 1;
+            $accountsQuery->skip(($accountPage - 1) * $perPage)->take($perPage);
         }
 
         $accounts = $accountsQuery->get();
@@ -241,10 +268,10 @@ class LedgerEngine
             $periodSumsQuery->where('entries.sbu_code', $sbuCode);
         }
         if ($startDate) {
-            $periodSumsQuery->where('entries.date', '>=', $startDate);
+            $periodSumsQuery->where('entries.date', '>=', $this->normalizeStartDate($startDate));
         }
         if ($endDate) {
-            $periodSumsQuery->where('entries.date', '<=', $endDate);
+            $periodSumsQuery->where('entries.date', '<=', $this->normalizeEndDate($endDate));
         }
 
         $periodSums = $periodSumsQuery->select('lines.account_id')
@@ -253,6 +280,41 @@ class LedgerEngine
             ->groupBy('lines.account_id')
             ->get()
             ->keyBy('account_id');
+
+        // When not paginating a single account, bulk fetch all lines in a single query to eliminate N+1
+        $linesByAccount = null;
+        if (!$accountId) {
+            $bulkLinesQuery = DB::table($prefix . 'journal_entry_lines as lines')
+                ->join($prefix . 'journal_entries as entries', 'lines.journal_entry_id', '=', 'entries.id')
+                ->whereIn('lines.account_id', $accountIds)
+                ->where('entries.status', JvStatus::POSTED->value);
+
+            if ($sbuCode) {
+                $bulkLinesQuery->where('entries.sbu_code', $sbuCode);
+            }
+            if ($startDate) {
+                $bulkLinesQuery->where('entries.date', '>=', $this->normalizeStartDate($startDate));
+            }
+            if ($endDate) {
+                $bulkLinesQuery->where('entries.date', '<=', $this->normalizeEndDate($endDate));
+            }
+
+            $linesByAccount = $bulkLinesQuery->select(
+                'lines.id as line_id',
+                'lines.account_id',
+                'lines.type',
+                'lines.amount',
+                'lines.description as line_description',
+                'entries.date',
+                'entries.entry_number',
+                'entries.reference',
+                'entries.description as entry_description'
+            )->orderBy('entries.date')
+             ->orderBy('entries.entry_number')
+             ->orderBy('lines.id')
+             ->get()
+             ->groupBy('account_id');
+        }
 
         $report = [];
 
@@ -264,69 +326,74 @@ class LedgerEngine
             $periodDebits = $sums ? (float) $sums->period_debit : 0.0;
             $periodCredits = $sums ? (float) $sums->period_credit : 0.0;
 
-            // Fetch lines using Query Builder (stdClass) to avoid Eloquent OOM
-            $linesQuery = DB::table($prefix . 'journal_entry_lines as lines')
-                ->join($prefix . 'journal_entries as entries', 'lines.journal_entry_id', '=', 'entries.id')
-                ->where('lines.account_id', $account->id)
-                ->where('entries.status', JvStatus::POSTED->value);
-
-            if ($sbuCode) {
-                $linesQuery->where('entries.sbu_code', $sbuCode);
-            }
-            if ($startDate) {
-                $linesQuery->where('entries.date', '>=', $startDate);
-            }
-            if ($endDate) {
-                $linesQuery->where('entries.date', '<=', $endDate);
-            }
-
-            $linesQuery->orderBy('entries.date')
-                ->orderBy('entries.entry_number')
-                ->orderBy('lines.id');
-
             $totalCount = 0;
             $priorMovement = 0.0;
 
-            if ($perPage) {
-                $totalCount = $linesQuery->count();
-                $page = $page ?: 1;
-                $offset = ($page - 1) * $perPage;
+            if ($linesByAccount !== null) {
+                // Retrieved via bulk grouped query
+                $lines = $linesByAccount->get($account->id, collect());
+            } else {
+                // Single account query with pagination support
+                $linesQuery = DB::table($prefix . 'journal_entry_lines as lines')
+                    ->join($prefix . 'journal_entries as entries', 'lines.journal_entry_id', '=', 'entries.id')
+                    ->where('lines.account_id', $account->id)
+                    ->where('entries.status', JvStatus::POSTED->value);
 
-                if ($offset > 0) {
-                    $skippedQuery = (clone $linesQuery)
-                        ->select('lines.type', 'lines.amount')
-                        ->take($offset);
-
-                    $priorSums = DB::query()
-                        ->fromSub($skippedQuery, 'prior_lines')
-                        ->selectRaw("SUM(CASE WHEN type = 'debit' THEN amount ELSE 0 END) as prior_debit")
-                        ->selectRaw("SUM(CASE WHEN type = 'credit' THEN amount ELSE 0 END) as prior_credit")
-                        ->first();
-
-                    if ($priorSums) {
-                        $priorDebits = (float) $priorSums->prior_debit;
-                        $priorCredits = (float) $priorSums->prior_credit;
-                        if ($account->hasNormalDebitBalance()) {
-                            $priorMovement = $priorDebits - $priorCredits;
-                        } else {
-                            $priorMovement = $priorCredits - $priorDebits;
-                        }
-                    }
+                if ($sbuCode) {
+                    $linesQuery->where('entries.sbu_code', $sbuCode);
+                }
+                if ($startDate) {
+                    $linesQuery->where('entries.date', '>=', $this->normalizeStartDate($startDate));
+                }
+                if ($endDate) {
+                    $linesQuery->where('entries.date', '<=', $this->normalizeEndDate($endDate));
                 }
 
-                $linesQuery->skip($offset)->take($perPage);
-            }
+                $linesQuery->orderBy('entries.date')
+                    ->orderBy('entries.entry_number')
+                    ->orderBy('lines.id');
 
-            $lines = $linesQuery->select(
-                'lines.id as line_id',
-                'lines.type',
-                'lines.amount',
-                'lines.description as line_description',
-                'entries.date',
-                'entries.entry_number',
-                'entries.reference',
-                'entries.description as entry_description'
-            )->get();
+                if ($perPage) {
+                    $totalCount = $linesQuery->count();
+                    $accountPage = $page ?: 1;
+                    $offset = ($accountPage - 1) * $perPage;
+
+                    if ($offset > 0) {
+                        $skippedQuery = (clone $linesQuery)
+                            ->select('lines.type', 'lines.amount')
+                            ->take($offset);
+
+                        $priorSums = DB::query()
+                            ->fromSub($skippedQuery, 'prior_lines')
+                            ->selectRaw("SUM(CASE WHEN type = 'debit' THEN amount ELSE 0 END) as prior_debit")
+                            ->selectRaw("SUM(CASE WHEN type = 'credit' THEN amount ELSE 0 END) as prior_credit")
+                            ->first();
+
+                        if ($priorSums) {
+                            $priorDebits = (float) $priorSums->prior_debit;
+                            $priorCredits = (float) $priorSums->prior_credit;
+                            if ($account->hasNormalDebitBalance()) {
+                                $priorMovement = $priorDebits - $priorCredits;
+                            } else {
+                                $priorMovement = $priorCredits - $priorDebits;
+                            }
+                        }
+                    }
+
+                    $linesQuery->skip($offset)->take($perPage);
+                }
+
+                $lines = $linesQuery->select(
+                    'lines.id as line_id',
+                    'lines.type',
+                    'lines.amount',
+                    'lines.description as line_description',
+                    'entries.date',
+                    'entries.entry_number',
+                    'entries.reference',
+                    'entries.description as entry_description'
+                )->get();
+            }
 
             $runningBalance = $openingBalance + $priorMovement;
             $formattedEntries = [];
@@ -360,11 +427,11 @@ class LedgerEngine
                 'entries'          => $formattedEntries,
             ];
 
-            if ($perPage) {
+            if ($accountId && $perPage) {
                 $reportItem['pagination'] = [
                     'total' => $totalCount,
                     'per_page' => $perPage,
-                    'current_page' => $page,
+                    'current_page' => $page ?: 1,
                     'last_page' => (int) ceil($totalCount / $perPage),
                 ];
             }
@@ -372,7 +439,17 @@ class LedgerEngine
             $report[] = $reportItem;
         }
 
-        return ['accounts' => $report];
+        $result = ['accounts' => $report];
+        if (!$accountId && $perPage && $totalAccountsCount !== null) {
+            $result['pagination'] = [
+                'total'        => $totalAccountsCount,
+                'per_page'     => $perPage,
+                'current_page' => $accountPage ?? 1,
+                'last_page'    => (int) ceil($totalAccountsCount / $perPage),
+            ];
+        }
+
+        return $result;
     }
 
     /**
@@ -572,7 +649,8 @@ class LedgerEngine
     {
         $cashCodes = config('accounting.cash_account_codes', ['1000', '1100']);
         $financingCodes = config('accounting.financing_account_codes', ['2400', '2500', '3000']);
-        $nonCashExpenseCodes = config('accounting.non_cash_expense_codes', ['5500']);
+        $nonCashExpenseCodes = config('accounting.non_cash_expense_codes', ['6500']);
+        $accumulatedDepreciationCodes = config('accounting.accumulated_depreciation_codes', ['1550']);
 
         // 1. Net Income from Income Statement
         $incomeStatement = $this->getIncomeStatement($startDate, $endDate, $sbuCode);
@@ -645,6 +723,11 @@ class LedgerEngine
                         $totalOperating += $impact;
                     }
                 } elseif ($account->subtype === 'fixed_asset' || $account->subtype === 'non_current_asset') {
+                    // Exclude accumulated depreciation (contra-asset); its non-cash expense is already added back in Operating Activities
+                    if (in_array($code, $accumulatedDepreciationCodes)) {
+                        continue;
+                    }
+
                     // Investing Asset adjustment: -(Change)
                     if ($change != 0.0) {
                         $impact = -$change;
@@ -887,5 +970,15 @@ class LedgerEngine
             ->orWhere('new_values->id', $journalEntryId)
             ->orderBy('created_at', 'asc')
             ->get();
+    }
+
+    private function normalizeStartDate(?string $date): ?string
+    {
+        return ($date && strlen($date) === 10) ? $date . ' 00:00:00' : $date;
+    }
+
+    private function normalizeEndDate(?string $date): ?string
+    {
+        return ($date && strlen($date) === 10) ? $date . ' 23:59:59' : $date;
     }
 }

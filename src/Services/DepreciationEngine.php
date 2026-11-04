@@ -20,8 +20,12 @@ class DepreciationEngine
         $year = date('Y', strtotime($date));
         $month = date('m', strtotime($date));
 
-        // Get accumulated depreciation logged so far
-        $accumulated = (float) DepreciationLog::where('fixed_asset_id', $asset->id)->sum('amount');
+        // Get accumulated depreciation logged so far from posted entries
+        $accumulated = (float) DepreciationLog::where('fixed_asset_id', $asset->id)
+            ->whereHas('journalEntry', function ($query) {
+                $query->where('status', \Nml\FinCore\Enums\JvStatus::POSTED);
+            })
+            ->sum('amount');
         $depreciableLimit = $asset->purchase_cost - $asset->salvage_value;
         $remainingDepreciable = $depreciableLimit - $accumulated;
 
@@ -59,6 +63,9 @@ class DepreciationEngine
             $exists = DepreciationLog::where('fixed_asset_id', $asset->id)
                 ->whereYear('depreciation_date', $year)
                 ->whereMonth('depreciation_date', $month)
+                ->whereHas('journalEntry', function ($query) {
+                    $query->where('status', \Nml\FinCore\Enums\JvStatus::POSTED);
+                })
                 ->exists();
 
             if ($exists) {

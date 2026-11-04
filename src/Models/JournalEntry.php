@@ -164,6 +164,9 @@ class JournalEntry extends Model
         $this->update([
             'status' => JvStatus::VOID,
         ]);
+
+        // Clean up associated DepreciationLog if this was a depreciation entry (Issue #6)
+        \Nml\FinCore\Models\DepreciationLog::where('journal_entry_id', $this->id)->delete();
     }
 
     public function getDebitSum(): float
@@ -185,6 +188,33 @@ class JournalEntry extends Model
                 newValues: $entry->toArray(),
                 userId: $entry->created_by ?? (auth()->check() ? auth()->id() : null)
             );
+        });
+
+        static::updating(function (JournalEntry $entry) {
+            $originalStatus = $entry->getOriginal('status');
+            if ($originalStatus instanceof JvStatus) {
+                $originalStatus = $originalStatus->value;
+            }
+
+            if ($originalStatus === JvStatus::POSTED->value) {
+                // When already posted, only allow transitioning to VOID or updating review metadata
+                $dirty = array_keys($entry->getDirty());
+                $allowedFields = ['status', 'approved_by', 'approved_at', 'reviewer_note', 'updated_at'];
+                $disallowedDirty = array_diff($dirty, $allowedFields);
+
+                if (!empty($disallowedDirty)) {
+                    throw new AccountingException(
+                        "Cannot modify posted journal entry fields (" . implode(', ', $disallowedDirty) . "). Posted entries are immutable; reverse or void instead."
+                    );
+                }
+
+                $newStatus = $entry->status instanceof JvStatus ? $entry->status->value : (string) $entry->status;
+                if ($newStatus !== JvStatus::POSTED->value && $newStatus !== JvStatus::VOID->value) {
+                    throw new AccountingException("Cannot revert a posted journal entry to {$newStatus}. Only voiding is permitted.");
+                }
+            } elseif ($originalStatus === JvStatus::VOID->value) {
+                throw new AccountingException("Cannot modify a voided journal entry.");
+            }
         });
 
         static::updated(function (JournalEntry $entry) {
@@ -210,6 +240,15 @@ class JournalEntry extends Model
         });
 
         static::deleting(function (JournalEntry $entry) {
+            $status = $entry->getOriginal('status');
+            if ($status instanceof JvStatus) {
+                $status = $status->value;
+            }
+
+            if ($status === JvStatus::POSTED->value) {
+                throw new AccountingException("Cannot delete a posted journal entry. Posted entries are immutable and must remain in the general ledger for compliance. Void the entry instead.");
+            }
+
             \Nml\FinCore\Services\AuditLogService::log(
                 action: 'deleted',
                 journalEntryId: $entry->id,

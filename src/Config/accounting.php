@@ -36,7 +36,13 @@ return [
     /*
      * Account codes classified as Non-Cash Expenses (depreciation, etc.) for Cash Flow reporting.
      */
-    'non_cash_expense_codes' => ['5500'],
+    'non_cash_expense_codes' => ['6500'],
+
+    /*
+     * Account codes classified as Contra-Asset / Accumulated Depreciation for Cash Flow reporting.
+     * Excluded from investing activities to avoid treating credited depreciation as cash inflow.
+     */
+    'accumulated_depreciation_codes' => ['1550'],
 
     /*
      * Account codes classified as Accounts Receivable for Ageing reporting.
