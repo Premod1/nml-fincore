@@ -32,6 +32,7 @@ return new class extends Migration
         });
 
         Schema::table($prefix . 'journal_entries', function (Blueprint $table) {
+            $table->dropIndex(['currency']);
             $table->dropColumn(['currency', 'exchange_rate']);
         });
     }

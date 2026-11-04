@@ -59,4 +59,33 @@ class JournalEntryLine extends Model
     {
         return $this->morphTo();
     }
+
+    protected static function booted(): void
+    {
+        static::updating(function (JournalEntryLine $line) {
+            $parent = $line->journalEntry;
+            if ($parent && in_array($parent->status, [\Nml\FinCore\Enums\JvStatus::POSTED, \Nml\FinCore\Enums\JvStatus::VOID])) {
+                $dirty = array_keys($line->getDirty());
+                $allowed = ['cleared_at', 'bank_reconciliation_id', 'updated_at'];
+                $disallowed = array_diff($dirty, $allowed);
+
+                if (!empty($disallowed)) {
+                    $statusVal = $parent->status instanceof \BackedEnum ? $parent->status->value : (string) $parent->status;
+                    throw new \Nml\FinCore\Exceptions\AccountingException(
+                        "Cannot modify financial fields on lines of a {$statusVal} journal entry."
+                    );
+                }
+            }
+        });
+
+        static::deleting(function (JournalEntryLine $line) {
+            $parent = $line->journalEntry;
+            if ($parent && in_array($parent->status, [\Nml\FinCore\Enums\JvStatus::POSTED, \Nml\FinCore\Enums\JvStatus::VOID])) {
+                $statusVal = $parent->status instanceof \BackedEnum ? $parent->status->value : (string) $parent->status;
+                throw new \Nml\FinCore\Exceptions\AccountingException(
+                    "Cannot delete lines from a {$statusVal} journal entry."
+                );
+            }
+        });
+    }
 }

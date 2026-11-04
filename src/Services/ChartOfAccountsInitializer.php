@@ -180,6 +180,12 @@ class ChartOfAccountsInitializer
                 'subtype' => 'expense',
             ],
             [
+                'code' => '6500',
+                'name' => 'Depreciation Expense',
+                'type' => AccountType::EXPENSE,
+                'subtype' => 'expense',
+            ],
+            [
                 'code' => '6710',
                 'name' => 'Interest Expense - Inventory Fin.',
                 'type' => AccountType::EXPENSE,

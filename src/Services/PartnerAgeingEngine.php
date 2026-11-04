@@ -57,24 +57,55 @@ class PartnerAgeingEngine
         }
 
         $targetAccountIds = $accounts->pluck('id')->toArray();
+        $prefix = config('accounting.table_prefix', 'fincore_');
 
-        // Fetch all lines posted up to the target date
-        $lines = JournalEntryLine::whereIn('account_id', $targetAccountIds)
-            ->whereHas('journalEntry', function ($query) use ($asOfDate) {
-                $query->where('status', JvStatus::POSTED)
-                    ->where('date', '<=', $asOfDate);
-            })
-            ->with(['journalEntry', 'partnerable'])
+        // Fetch lines using Query Builder (stdClass) with direct JOIN to avoid Eloquent hydration OOM (Issue #10)
+        $lines = \Illuminate\Support\Facades\DB::table($prefix . 'journal_entry_lines as lines')
+            ->join($prefix . 'journal_entries as entries', 'lines.journal_entry_id', '=', 'entries.id')
+            ->whereIn('lines.account_id', $targetAccountIds)
+            ->where('entries.status', JvStatus::POSTED->value)
+            ->where('entries.date', '<=', $asOfDate)
+            ->select(
+                'lines.id',
+                'lines.type',
+                'lines.amount',
+                'lines.due_date',
+                'lines.partnerable_type',
+                'lines.partnerable_id',
+                'entries.date as entry_date'
+            )
             ->get();
 
-        // Group lines by partner
+        // Group lines by partner and collect unique partner IDs for batch loading
         $partnerGroups = [];
+        $partnersByType = [];
+
         foreach ($lines as $line) {
             $key = $line->partnerable_type && $line->partnerable_id
                 ? $line->partnerable_type . ':' . $line->partnerable_id
                 : 'Unassigned';
 
             $partnerGroups[$key][] = $line;
+
+            if ($line->partnerable_type && $line->partnerable_id) {
+                $partnersByType[$line->partnerable_type][] = $line->partnerable_id;
+            }
+        }
+
+        // Efficient batch resolution of partner names (avoids loading models per line)
+        $partnerNames = [];
+        foreach ($partnersByType as $modelClass => $ids) {
+            if (class_exists($modelClass)) {
+                $uniqueIds = array_unique($ids);
+                try {
+                    $models = $modelClass::whereIn('id', $uniqueIds)->get();
+                    foreach ($models as $m) {
+                        $partnerNames[$modelClass . ':' . $m->id] = $m->name ?? ($m->title ?? ($modelClass . ' #' . $m->id));
+                    }
+                } catch (\Throwable $e) {
+                    // Fallback to identifier if query fails
+                }
+            }
         }
 
         $report = [];
@@ -88,13 +119,7 @@ class PartnerAgeingEngine
                 $firstLine = $partnerLines[0];
                 $partnerType = $firstLine->partnerable_type;
                 $partnerId = $firstLine->partnerable_id;
-                
-                // Get partner name if model has a 'name' property
-                if ($firstLine->partnerable) {
-                    $partnerName = $firstLine->partnerable->name ?? ($firstLine->partnerable->title ?? $key);
-                } else {
-                    $partnerName = $key;
-                }
+                $partnerName = $partnerNames[$key] ?? $key;
             }
 
             // Split into positive charges and credit/payment adjustments
@@ -123,8 +148,8 @@ class PartnerAgeingEngine
 
             // Sort charges by date (FIFO - oldest first)
             usort($charges, function ($a, $b) {
-                $dateA = $a->due_date ?? $a->journalEntry->date;
-                $dateB = $b->due_date ?? $b->journalEntry->date;
+                $dateA = $a->due_date ?? $a->entry_date;
+                $dateB = $b->due_date ?? $b->entry_date;
                 $strA = $dateA instanceof \DateTimeInterface ? $dateA->format('Y-m-d') : (string) $dateA;
                 $strB = $dateB instanceof \DateTimeInterface ? $dateB->format('Y-m-d') : (string) $dateB;
                 return strcmp($strA, $strB);
@@ -156,7 +181,7 @@ class PartnerAgeingEngine
 
                 if ($chargeAmount > 0.005) {
                     // Calculate Age of this outstanding amount
-                    $chargeDate = $charge->due_date ?? $charge->journalEntry->date;
+                    $chargeDate = $charge->due_date ?? $charge->entry_date;
                     $chargeDateStr = $chargeDate instanceof \DateTimeInterface ? $chargeDate->format('Y-m-d') : (string) $chargeDate;
                     
                     $asOfTimestamp = strtotime($asOfDate);

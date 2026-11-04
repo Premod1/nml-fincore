@@ -639,4 +639,14 @@ foreach ($logs as $log) {
     Log::info("New State: ", (array) $log->new_values);
 }
 ```
+
+---
+
+### 15. Running Tests
+
+Run the package test suite using PHPUnit:
+
+```bash
+./vendor/bin/phpunit
+```
 ```
