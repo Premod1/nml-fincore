@@ -209,7 +209,7 @@ class JournalEntry extends Model
             );
         });
 
-        static::deleted(function (JournalEntry $entry) {
+        static::deleting(function (JournalEntry $entry) {
             \Nml\FinCore\Services\AuditLogService::log(
                 action: 'deleted',
                 journalEntryId: $entry->id,

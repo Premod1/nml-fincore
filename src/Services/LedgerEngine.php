@@ -268,17 +268,7 @@ class LedgerEngine
             $linesQuery = DB::table($prefix . 'journal_entry_lines as lines')
                 ->join($prefix . 'journal_entries as entries', 'lines.journal_entry_id', '=', 'entries.id')
                 ->where('lines.account_id', $account->id)
-                ->where('entries.status', JvStatus::POSTED->value)
-                ->select(
-                    'lines.id as line_id',
-                    'lines.type',
-                    'lines.amount',
-                    'lines.description as line_description',
-                    'entries.date',
-                    'entries.entry_number',
-                    'entries.reference',
-                    'entries.description as entry_description'
-                );
+                ->where('entries.status', JvStatus::POSTED->value);
 
             if ($sbuCode) {
                 $linesQuery->where('entries.sbu_code', $sbuCode);
@@ -290,17 +280,55 @@ class LedgerEngine
                 $linesQuery->where('entries.date', '<=', $endDate);
             }
 
-            $linesQuery->orderBy('entries.date')->orderBy('entries.entry_number');
+            $linesQuery->orderBy('entries.date')
+                ->orderBy('entries.entry_number')
+                ->orderBy('lines.id');
 
             $totalCount = 0;
+            $priorMovement = 0.0;
+
             if ($perPage) {
                 $totalCount = $linesQuery->count();
                 $page = $page ?: 1;
-                $linesQuery->skip(($page - 1) * $perPage)->take($perPage);
+                $offset = ($page - 1) * $perPage;
+
+                if ($offset > 0) {
+                    $skippedQuery = (clone $linesQuery)
+                        ->select('lines.type', 'lines.amount')
+                        ->take($offset);
+
+                    $priorSums = DB::query()
+                        ->fromSub($skippedQuery, 'prior_lines')
+                        ->selectRaw("SUM(CASE WHEN type = 'debit' THEN amount ELSE 0 END) as prior_debit")
+                        ->selectRaw("SUM(CASE WHEN type = 'credit' THEN amount ELSE 0 END) as prior_credit")
+                        ->first();
+
+                    if ($priorSums) {
+                        $priorDebits = (float) $priorSums->prior_debit;
+                        $priorCredits = (float) $priorSums->prior_credit;
+                        if ($account->hasNormalDebitBalance()) {
+                            $priorMovement = $priorDebits - $priorCredits;
+                        } else {
+                            $priorMovement = $priorCredits - $priorDebits;
+                        }
+                    }
+                }
+
+                $linesQuery->skip($offset)->take($perPage);
             }
 
-            $lines = $linesQuery->get();
-            $runningBalance = $openingBalance;
+            $lines = $linesQuery->select(
+                'lines.id as line_id',
+                'lines.type',
+                'lines.amount',
+                'lines.description as line_description',
+                'entries.date',
+                'entries.entry_number',
+                'entries.reference',
+                'entries.description as entry_description'
+            )->get();
+
+            $runningBalance = $openingBalance + $priorMovement;
             $formattedEntries = [];
 
             foreach ($lines as $line) {
@@ -449,15 +477,44 @@ class LedgerEngine
         }
 
         // Include retained earnings / current year profit rollup dynamically if not closed
+        $currentYearEarnings = 0.0;
+        foreach ($accounts as $account) {
+            $balance = $balances[$account->id] ?? 0.0;
+            if ($account->type === AccountType::REVENUE) {
+                // Revenue has normal Credit balance. Positive balance adds to earnings.
+                $currentYearEarnings += $balance;
+            } elseif ($account->type === AccountType::EXPENSE) {
+                // Expense has normal Debit balance. Positive balance reduces earnings.
+                $currentYearEarnings -= $balance;
+            }
+        }
+
         $tolerance = (float) config('accounting.rounding_tolerance', 0.005);
+
+        if (abs($currentYearEarnings) > $tolerance) {
+            $equity[] = [
+                'account' => (object) [
+                    'id'         => null,
+                    'code'       => 'P&L',
+                    'name'       => 'Current Year Earnings',
+                    'type'       => AccountType::EQUITY,
+                    'subtype'    => 'current_year_earnings',
+                    'is_virtual' => true,
+                ],
+                'balance' => $currentYearEarnings,
+            ];
+            $totalEquity += $currentYearEarnings;
+        }
+
         $isBalanced = abs($totalAssets - ($totalLiabilities + $totalEquity)) <= $tolerance;
 
         return [
-            'as_of_date'  => $date,
-            'assets'      => ['accounts' => $assets, 'total' => $totalAssets],
-            'liabilities' => ['accounts' => $liabilities, 'total' => $totalLiabilities],
-            'equity'      => ['accounts' => $equity, 'total' => $totalEquity],
-            'is_balanced' => $isBalanced,
+            'as_of_date'            => $date,
+            'assets'                => ['accounts' => $assets, 'total' => $totalAssets],
+            'liabilities'           => ['accounts' => $liabilities, 'total' => $totalLiabilities],
+            'equity'                => ['accounts' => $equity, 'total' => $totalEquity],
+            'current_year_earnings' => $currentYearEarnings,
+            'is_balanced'           => $isBalanced,
         ];
     }
 
@@ -826,6 +883,8 @@ class LedgerEngine
     public function getAuditHistory(int $journalEntryId): \Illuminate\Support\Collection
     {
         return \Nml\FinCore\Models\AuditLog::where('journal_entry_id', $journalEntryId)
+            ->orWhere('old_values->id', $journalEntryId)
+            ->orWhere('new_values->id', $journalEntryId)
             ->orderBy('created_at', 'asc')
             ->get();
     }
