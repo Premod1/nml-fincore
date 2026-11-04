@@ -12,7 +12,7 @@ return new class extends Migration
 
         Schema::create($prefix . 'audit_logs', function (Blueprint $table) use ($prefix) {
             $table->id();
-            $table->unsignedBigInteger('journal_entry_id')->nullable();
+            $table->unsignedBigInteger('journal_entry_id')->nullable()->index();
             $table->string('action');
             $table->unsignedBigInteger('user_id')->nullable();
             $table->string('ip_address')->nullable();
@@ -21,11 +21,11 @@ return new class extends Migration
             $table->json('new_values')->nullable();
             $table->timestamps();
 
-            // Set up foreign key constraint with cascade on delete
+            // Set up foreign key constraint with null on delete to preserve audit trail
             $table->foreign('journal_entry_id')
                 ->references('id')
                 ->on($prefix . 'journal_entries')
-                ->onDelete('cascade');
+                ->nullOnDelete();
         });
     }
 

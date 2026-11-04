@@ -258,6 +258,7 @@ $balanceSheet = FinCore::getBalanceSheet(
 $assets = $balanceSheet['assets']['total'];
 $liabilities = $balanceSheet['liabilities']['total'];
 $equity = $balanceSheet['equity']['total'];
+$currentYearEarnings = $balanceSheet['current_year_earnings']; // Net profit/loss dynamically rolled into equity if fiscal year is unclosed
 $isBalanced = $balanceSheet['is_balanced']; // Assets = Liabilities + Equity
 ```
 
