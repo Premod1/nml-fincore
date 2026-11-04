@@ -799,17 +799,17 @@ class LedgerEngine
     /**
      * Generate an ageing report for Accounts Receivable.
      */
-    public function getReceivablesAgeingReport(string $asOfDate): array
+    public function getReceivablesAgeingReport(string $asOfDate, ?array $accountIds = null): array
     {
-        return (new PartnerAgeingEngine())->getReceivablesAgeingReport($asOfDate);
+        return (new PartnerAgeingEngine())->getReceivablesAgeingReport($asOfDate, $accountIds);
     }
 
     /**
      * Generate an ageing report for Accounts Payable.
      */
-    public function getPayablesAgeingReport(string $asOfDate): array
+    public function getPayablesAgeingReport(string $asOfDate, ?array $accountIds = null): array
     {
-        return (new PartnerAgeingEngine())->getPayablesAgeingReport($asOfDate);
+        return (new PartnerAgeingEngine())->getPayablesAgeingReport($asOfDate, $accountIds);
     }
 
     /**

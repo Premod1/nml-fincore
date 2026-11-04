@@ -37,4 +37,14 @@ return [
      * Account codes classified as Non-Cash Expenses (depreciation, etc.) for Cash Flow reporting.
      */
     'non_cash_expense_codes' => ['5500'],
+
+    /*
+     * Account codes classified as Accounts Receivable for Ageing reporting.
+     */
+    'ar_account_codes' => ['1200'],
+
+    /*
+     * Account codes classified as Accounts Payable for Ageing reporting.
+     */
+    'ap_account_codes' => ['2000'],
 ];

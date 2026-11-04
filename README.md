@@ -568,14 +568,20 @@ $entry->post();
 #### Generating Ageing Reports
 Fetch the ageing analysis report for all partners. The engine allocates credits against debits using a FIFO (First In, First Out) algorithm and classifies outstanding amounts into age buckets based on the `due_date`:
 
+By default, the engine tracks Accounts Receivable using code `1200` (or accounts with subtype `receivable`) and Accounts Payable using code `2000` (or accounts with subtype `payable`). You can customize these codes in `config/accounting.php` (`ar_account_codes` and `ap_account_codes`) or pass specific account IDs directly.
+
 ```php
 use Nml\FinCore\Facades\FinCore;
 
-// 1. Get Accounts Receivable Ageing Report
+// 1. Get Accounts Receivable Ageing Report (Default configured AR accounts)
 $arReport = FinCore::getReceivablesAgeingReport('2026-06-30');
 
-// 2. Get Accounts Payable Ageing Report
+// 2. Get Accounts Payable Ageing Report (Default configured AP accounts)
 $apReport = FinCore::getPayablesAgeingReport('2026-06-30');
+
+// 3. (Optional) Filter by specific Account IDs
+$customArReport = FinCore::getReceivablesAgeingReport('2026-06-30', [$arAccountId]);
+$customApReport = FinCore::getPayablesAgeingReport('2026-06-30', [$apAccountId]);
 
 foreach ($arReport as $row) {
     $partnerName = $row['partner_name'];

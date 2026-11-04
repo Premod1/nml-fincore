@@ -12,33 +12,54 @@ class PartnerAgeingEngine
     /**
      * Generate an ageing report for Accounts Receivable.
      */
-    public function getReceivablesAgeingReport(string $asOfDate): array
+    public function getReceivablesAgeingReport(string $asOfDate, ?array $accountIds = null): array
     {
-        return $this->generateAgeingReport($asOfDate, AccountType::RECEIVABLE->value);
+        return $this->generateAgeingReport($asOfDate, 'receivable', $accountIds);
     }
 
     /**
      * Generate an ageing report for Accounts Payable.
      */
-    public function getPayablesAgeingReport(string $asOfDate): array
+    public function getPayablesAgeingReport(string $asOfDate, ?array $accountIds = null): array
     {
-        return $this->generateAgeingReport($asOfDate, AccountType::PAYABLE->value);
+        return $this->generateAgeingReport($asOfDate, 'payable', $accountIds);
     }
 
     /**
      * Core FIFO Ageing calculation engine.
      */
-    private function generateAgeingReport(string $asOfDate, string $accountTypeValue): array
+    private function generateAgeingReport(string $asOfDate, string $type, ?array $accountIds = null): array
     {
-        $accounts = Account::where('type', $accountTypeValue)->get();
+        if (!empty($accountIds)) {
+            $accounts = Account::whereIn('id', $accountIds)->where('is_active', true)->get();
+        } elseif ($type === 'receivable') {
+            $arCodes = config('accounting.ar_account_codes', ['1200']);
+            $accounts = Account::where('is_active', true)
+                ->where('type', AccountType::ASSET)
+                ->where(function ($query) use ($arCodes) {
+                    $query->whereIn('code', $arCodes)
+                        ->orWhere('subtype', 'receivable');
+                })
+                ->get();
+        } else {
+            $apCodes = config('accounting.ap_account_codes', ['2000']);
+            $accounts = Account::where('is_active', true)
+                ->where('type', AccountType::LIABILITY)
+                ->where(function ($query) use ($apCodes) {
+                    $query->whereIn('code', $apCodes)
+                        ->orWhere('subtype', 'payable');
+                })
+                ->get();
+        }
+
         if ($accounts->isEmpty()) {
             return [];
         }
 
-        $accountIds = $accounts->pluck('id')->toArray();
+        $targetAccountIds = $accounts->pluck('id')->toArray();
 
         // Fetch all lines posted up to the target date
-        $lines = JournalEntryLine::whereIn('account_id', $accountIds)
+        $lines = JournalEntryLine::whereIn('account_id', $targetAccountIds)
             ->whereHas('journalEntry', function ($query) use ($asOfDate) {
                 $query->where('status', JvStatus::POSTED)
                     ->where('date', '<=', $asOfDate);
@@ -83,7 +104,7 @@ class PartnerAgeingEngine
             foreach ($partnerLines as $line) {
                 $amount = (float) $line->amount;
 
-                if ($accountTypeValue === AccountType::RECEIVABLE->value) {
+                if ($type === 'receivable') {
                     // Receivables: Debits are charges, Credits are payments
                     if ($line->type === 'debit') {
                         $charges[] = $line;
@@ -104,7 +125,9 @@ class PartnerAgeingEngine
             usort($charges, function ($a, $b) {
                 $dateA = $a->due_date ?? $a->journalEntry->date;
                 $dateB = $b->due_date ?? $b->journalEntry->date;
-                return strcmp($dateA->format('Y-m-d'), $dateB->format('Y-m-d'));
+                $strA = $dateA instanceof \DateTimeInterface ? $dateA->format('Y-m-d') : (string) $dateA;
+                $strB = $dateB instanceof \DateTimeInterface ? $dateB->format('Y-m-d') : (string) $dateB;
+                return strcmp($strA, $strB);
             });
 
             // Allocate payments against charges using FIFO
@@ -134,8 +157,10 @@ class PartnerAgeingEngine
                 if ($chargeAmount > 0.005) {
                     // Calculate Age of this outstanding amount
                     $chargeDate = $charge->due_date ?? $charge->journalEntry->date;
+                    $chargeDateStr = $chargeDate instanceof \DateTimeInterface ? $chargeDate->format('Y-m-d') : (string) $chargeDate;
+                    
                     $asOfTimestamp = strtotime($asOfDate);
-                    $chargeTimestamp = strtotime($chargeDate->format('Y-m-d'));
+                    $chargeTimestamp = strtotime($chargeDateStr);
                     
                     $ageDays = ($asOfTimestamp - $chargeTimestamp) / 86400;
 
