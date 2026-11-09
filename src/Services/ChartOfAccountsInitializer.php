@@ -66,6 +66,12 @@ class ChartOfAccountsInitializer
                 'subtype' => 'current_liability',
             ],
             [
+                'code' => '2100',
+                'name' => 'Customer Advance / Unearned Revenue',
+                'type' => AccountType::LIABILITY,
+                'subtype' => 'current_liability',
+            ],
+            [
                 'code' => '2150',
                 'name' => 'Inventory Financing Payable',
                 'type' => AccountType::LIABILITY,
@@ -74,6 +80,12 @@ class ChartOfAccountsInitializer
             [
                 'code' => '2170',
                 'name' => 'Accrued Financing Interest',
+                'type' => AccountType::LIABILITY,
+                'subtype' => 'current_liability',
+            ],
+            [
+                'code' => '2200',
+                'name' => 'Payroll & EPF/ETF Payable',
                 'type' => AccountType::LIABILITY,
                 'subtype' => 'current_liability',
             ],
@@ -182,6 +194,18 @@ class ChartOfAccountsInitializer
             [
                 'code' => '6500',
                 'name' => 'Depreciation Expense',
+                'type' => AccountType::EXPENSE,
+                'subtype' => 'expense',
+            ],
+            [
+                'code' => '6600',
+                'name' => 'Bad Debts Written Off Expense',
+                'type' => AccountType::EXPENSE,
+                'subtype' => 'expense',
+            ],
+            [
+                'code' => '6650',
+                'name' => 'Inventory Damaged & Write-off Loss',
                 'type' => AccountType::EXPENSE,
                 'subtype' => 'expense',
             ],
