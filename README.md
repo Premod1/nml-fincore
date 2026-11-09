@@ -10,6 +10,10 @@ Looking for a **Ready-Made QuickBooks-style Accounting Dashboard, Live Drill-Dow
 
 Check out **[NML FinCore PRO](https://github.com/Premod1/nml-fincore-pro)**!
 
+<p align="center">
+  <img src="docs/assets/fincore-pro-demo.gif" alt="NML FinCore PRO Demo" width="100%">
+</p>
+
 ### 🌟 What's in FinCore PRO?
 * **Full QuickBooks Online (QBO) UI Suite**: Chart of Accounts, Journal Voucher Manager, Trial Balance, Profit & Loss, Balance Sheet, and General Ledger.
 * **Zero-Accounting-Knowledge Event Bridge (`FinCorePro::recordErpEvent`)**: Record Sales, Payments, Bills, and Expenses directly from ERP controllers without calculating Debits, Credits, VAT, or COGS!
