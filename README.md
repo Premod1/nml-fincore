@@ -4,6 +4,38 @@ NML FinCore is a robust, decoupled double-entry accounting engine designed for L
 
 ---
 
+## 💖 NML FinCore PRO (Commercial UI Kit & ERP Auto-Posting Engine)
+
+Looking for a **Ready-Made QuickBooks-style Accounting Dashboard, Live Drill-Down Reports, and Zero-Accounting-Knowledge ERP Event Bridge**?
+
+Check out **[NML FinCore PRO](https://github.com/Premod1/nml-fincore-pro)**!
+
+### 🌟 What's in FinCore PRO?
+* **Full QuickBooks Online (QBO) UI Suite**: Chart of Accounts, Journal Voucher Manager, Trial Balance, Profit & Loss, Balance Sheet, and General Ledger.
+* **Zero-Accounting-Knowledge Event Bridge (`FinCorePro::recordErpEvent`)**: Record Sales, Payments, Bills, and Expenses directly from ERP controllers without calculating Debits, Credits, VAT, or COGS!
+* **Dynamic ERP Posting Rules UI (`/accounting/settings`)**: Accountants can dynamically re-map accounts from the browser without code changes.
+* **Dual-Mode Integration**: Embeds seamlessly into your existing Bootstrap 4/5 or Blade ERP layout via Scoped CSS (`.fincore-scope`).
+
+### 🚀 Get FinCore PRO ($29 Sponsor Tier)
+Sponsor **$29** on [GitHub Sponsors (Premod1)](https://github.com/sponsors/Premod1) to receive instant private repository access, automated collaborator invitation, and all future updates:
+
+👉 **[Sponsor & Get FinCore PRO ($29)](https://github.com/sponsors/Premod1)**
+
+Once sponsored, install via Composer:
+```json
+"repositories": [
+    {
+        "type": "vcs",
+        "url": "https://github.com/Premod1/nml-fincore-pro.git"
+    }
+],
+"require": {
+    "nml/fincore-pro": "^1.0"
+}
+```
+
+---
+
 ## Installation
 
 Install the package via Composer:
