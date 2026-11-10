@@ -70,4 +70,52 @@ return [
      */
     'forex_gain_account_code' => '4900',
     'forex_loss_account_code' => '6900',
+
+    /*
+     * Multi-Level Journal Entry Approval Workflow & Maker-Checker Settings.
+     */
+    'approval_workflow' => [
+        /*
+         * Enable or disable approval workflow.
+         * When false, entries can be posted directly from draft.
+         */
+        'enabled' => env('ACCOUNTING_APPROVAL_WORKFLOW_ENABLED', false),
+
+        /*
+         * Enforce strict maker-checker rule.
+         * Prevents users from approving entries they created or submitted.
+         */
+        'enforce_maker_checker' => env('ACCOUNTING_ENFORCE_MAKER_CHECKER', true),
+
+        /*
+         * Method 1: Callback / Resolver to check user roles in host ERP.
+         * Signature: function (int|string $userId, string $requiredRole): bool
+         * Example: fn($userId, $role) => User::find($userId)?->hasRole($role) ?? false
+         */
+        'role_checker' => null,
+
+        /*
+         * Amount-based approval tiers / thresholds.
+         * level: hierarchy level (1, 2, 3...)
+         * max_amount: maximum entry amount approved by this level (null for unlimited)
+         * role: required role in the host ERP system
+         */
+        'thresholds' => [
+            [
+                'level'      => 1,
+                'max_amount' => 50000.00,
+                'role'       => 'accountant',
+            ],
+            [
+                'level'      => 2,
+                'max_amount' => 500000.00,
+                'role'       => 'finance_manager',
+            ],
+            [
+                'level'      => 3,
+                'max_amount' => null, // Over 500,000 LKR
+                'role'       => 'cfo',
+            ],
+        ],
+    ],
 ];

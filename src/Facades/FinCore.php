@@ -33,6 +33,13 @@ use Illuminate\Support\Facades\Facade;
  * @method static \Nml\FinCore\Models\RecurringJournalEntry updateRecurringEntry(\Nml\FinCore\Models\RecurringJournalEntry|int $entry, array $data)
  * @method static array processDueRecurringEntries(?string $asOfDate = null, ?int $userId = null)
  * @method static \Nml\FinCore\Models\JournalEntry|null processRecurringEntry(\Nml\FinCore\Models\RecurringJournalEntry|int $recurringEntry, ?string $runDate = null, bool $force = false, ?int $userId = null)
+ * @method static void setRoleChecker(?\Closure $checker)
+ * @method static \Nml\FinCore\Models\JournalEntry submitForApproval(\Nml\FinCore\Models\JournalEntry|int $entry, ?int $userId = null)
+ * @method static \Nml\FinCore\Models\JournalEntry approveJournalEntry(\Nml\FinCore\Models\JournalEntry|int $entry, int|string $approverId, ?string $comment = null, ?string $role = null)
+ * @method static \Nml\FinCore\Models\JournalEntry rejectJournalEntry(\Nml\FinCore\Models\JournalEntry|int $entry, int|string $approverId, string $reason, ?string $role = null)
+ * @method static bool canApproveJournalEntry(\Nml\FinCore\Models\JournalEntry|int $entry, int|string $userId, ?string $role = null)
+ * @method static \Illuminate\Support\Collection getPendingApprovals(int|string|null $userId = null, ?string $role = null)
+ * @method static \Illuminate\Support\Collection getApprovalHistory(\Nml\FinCore\Models\JournalEntry|int $entry)
  * 
  * @see \Nml\FinCore\Services\LedgerEngine
  */
