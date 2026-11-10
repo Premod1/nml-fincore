@@ -832,6 +832,19 @@ Schedule::command('fincore:process-recurring')->dailyAt('00:05');
 
 Enforce enterprise internal financial controls, maker-checker segregation of duties, and role-based monetary approval thresholds.
 
+#### Enabling / Disabling the Workflow
+The approval workflow is completely optional and configurable via your ERP's `.env` file:
+
+```env
+# Set to false to allow direct posting from draft without approval (Default for small teams)
+ACCOUNTING_APPROVAL_WORKFLOW_ENABLED=false
+
+# Set to true to enforce multi-level maker-checker approval controls
+ACCOUNTING_APPROVAL_WORKFLOW_ENABLED=true
+```
+
+When disabled (`false`), any draft journal entry can be posted directly via `$entry->post()` without requiring approval or maker-checker validations.
+
 #### Status Lifecycle
 ```
 DRAFT ➔ PENDING_APPROVAL ➔ APPROVED ➔ POSTED
@@ -874,7 +887,7 @@ Configure approval thresholds in `config/accounting.php`, and hook your host ERP
 ],
 ```
 
-You can also register or override the role checker dynamically in a service provider or middleware:
+You can also register or override the role checker dynamically in your ERP's `AppServiceProvider.php`:
 ```php
 use Nml\FinCore\Facades\FinCore;
 
@@ -927,23 +940,106 @@ if (FinCore::canApproveJournalEntry($entry, userId: $approverId)) {
 $entry->returnToDraft('Updated invoice attached');
 ```
 
-#### UI Helpers for ERP Dashboards
+#### ERP Controller & UI Implementation Guide
 
+##### 1. Approval Controller (`app/Http/Controllers/JournalEntryApprovalController.php`)
 ```php
-// Fetch pending approval entries awaiting action for a specific user:
-$pendingList = FinCore::getPendingApprovals(userId: auth()->id());
+namespace App\Http\Controllers;
 
-// Retrieve the audit trail and history of all approvals and rejections:
-$history = FinCore::getApprovalHistory($entry);
+use Illuminate\Http\Request;
+use Nml\FinCore\Facades\FinCore;
+use Nml\FinCore\Models\JournalEntry;
 
-foreach ($history as $record) {
-    // $record->approver_id
-    // $record->action ('approved' or 'rejected')
-    // $record->level
-    // $record->amount
-    // $record->comment / reason
-    // $record->created_at
+class JournalEntryApprovalController extends Controller
+{
+    // List pending approvals for currently authenticated user
+    public function index()
+    {
+        $pendingEntries = FinCore::getPendingApprovals(userId: auth()->id());
+        return view('accounting.approvals.index', compact('pendingEntries'));
+    }
+
+    // Submit draft entry for approval
+    public function submit($id)
+    {
+        $entry = JournalEntry::findOrFail($id);
+        $entry->submitForApproval(userId: auth()->id());
+        return back()->with('success', 'Entry submitted for approval.');
+    }
+
+    // Approve entry
+    public function approve(Request $request, $id)
+    {
+        $entry = JournalEntry::findOrFail($id);
+        FinCore::approveJournalEntry($entry, auth()->id(), $request->input('comment'));
+        $entry->post(); // Post directly upon approval
+        return back()->with('success', 'Journal entry approved and posted.');
+    }
+
+    // Reject entry
+    public function reject(Request $request, $id)
+    {
+        $request->validate(['reason' => 'required|string|min:5']);
+        $entry = JournalEntry::findOrFail($id);
+        FinCore::rejectJournalEntry($entry, auth()->id(), $request->input('reason'));
+        return back()->with('warning', 'Journal entry rejected.');
+    }
 }
+```
+
+##### 2. Blade UI View (`resources/views/accounting/entries/show.blade.php`)
+```blade
+<div class="card p-4">
+    <h4>Journal Entry: {{ $entry->entry_number }}</h4>
+    <p>Status: <span class="badge bg-primary">{{ strtoupper($entry->status->value) }}</span></p>
+    <p>Total Amount: {{ number_format($entry->getDebitSum(), 2) }} {{ $entry->currency }}</p>
+
+    <div class="actions mt-3">
+        {{-- Submit Button for Maker --}}
+        @if($entry->status->value === 'draft')
+            <form action="{{ route('entries.submit', $entry->id) }}" method="POST">
+                @csrf
+                <button type="submit" class="btn btn-primary">Submit for Approval</button>
+            </form>
+        @endif
+
+        {{-- Conditional Approve / Reject Buttons (Maker-Checker & Threshold validated) --}}
+        @if(FinCore::canApproveJournalEntry($entry, auth()->id()))
+            <form action="{{ route('entries.approve', $entry->id) }}" method="POST" class="d-inline">
+                @csrf
+                <button type="submit" class="btn btn-success">✓ Approve & Post</button>
+            </form>
+
+            <button type="button" class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#rejectModal">
+                ✗ Reject
+            </button>
+        {{-- Maker Warning if Maker Views Own Entry --}}
+        @elseif($entry->created_by === auth()->id() && $entry->status->value === 'pending_approval')
+            <div class="alert alert-warning py-1 px-2 d-inline-block">
+                🔒 Maker-Checker Enforced: You created this entry, so another authorized user must approve it.
+            </div>
+        @endif
+    </div>
+
+    {{-- Approval Audit Trail Timeline --}}
+    <h5 class="mt-4">Approval Trail:</h5>
+    <ul class="list-group">
+        @foreach(FinCore::getApprovalHistory($entry) as $history)
+            <li class="list-group-item d-flex justify-content-between">
+                <div>
+                    <span class="badge {{ $history->action === 'approved' ? 'bg-success' : 'bg-danger' }}">
+                        {{ strtoupper($history->action) }}
+                    </span>
+                    by User #{{ $history->approver_id }} (Role: {{ $history->role }})
+                    @if($history->comment)
+                        <div class="text-muted small mt-1">Note: "{{ $history->comment }}"</div>
+                    @endif
+                </div>
+                <span class="text-muted small">{{ $history->created_at->format('Y-m-d H:i') }}</span>
+            </li>
+        @endforeach
+    </ul>
+</div>
 ```
 
 ---
