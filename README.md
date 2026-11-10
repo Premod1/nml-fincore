@@ -828,7 +828,127 @@ Schedule::command('fincore:process-recurring')->dailyAt('00:05');
 
 ---
 
-### 16. Running Tests
+### 16. Multi-Level Journal Entry Approval Workflow (Maker-Checker)
+
+Enforce enterprise internal financial controls, maker-checker segregation of duties, and role-based monetary approval thresholds.
+
+#### Status Lifecycle
+```
+DRAFT ➔ PENDING_APPROVAL ➔ APPROVED ➔ POSTED
+                     └───► REJECTED (with mandatory reason)
+```
+
+#### Configuration & Role Resolver (Method 1: Hooking Host ERP System)
+Configure approval thresholds in `config/accounting.php`, and hook your host ERP application's User & Role system (such as Spatie Laravel Permission or custom RBAC) via the `role_checker` callback:
+
+```php
+// config/accounting.php
+'approval_workflow' => [
+    'enabled' => env('ACCOUNTING_APPROVAL_WORKFLOW_ENABLED', true),
+    'enforce_maker_checker' => env('ACCOUNTING_ENFORCE_MAKER_CHECKER', true),
+
+    // Method 1: Hook ERP's user/role system
+    'role_checker' => function ($userId, string $requiredRole): bool {
+        $user = \App\Models\User::find($userId);
+        return $user ? $user->hasRole($requiredRole) : false;
+    },
+
+    // Amount-based approval thresholds
+    'thresholds' => [
+        [
+            'level'      => 1,
+            'max_amount' => 50000.00,
+            'role'       => 'accountant',
+        ],
+        [
+            'level'      => 2,
+            'max_amount' => 500000.00,
+            'role'       => 'finance_manager',
+        ],
+        [
+            'level'      => 3,
+            'max_amount' => null, // Over 500,000 LKR
+            'role'       => 'cfo',
+        ],
+    ],
+],
+```
+
+You can also register or override the role checker dynamically in a service provider or middleware:
+```php
+use Nml\FinCore\Facades\FinCore;
+
+FinCore::setRoleChecker(function ($userId, $requiredRole) {
+    return \App\Models\User::find($userId)?->hasRole($requiredRole) ?? false;
+});
+```
+
+#### Submitting, Approving, and Rejecting Entries
+
+```php
+use Nml\FinCore\Facades\FinCore;
+
+// 1. Maker creates a draft journal entry
+$entry = FinCore::createJournalEntry([
+    'date'        => '2026-06-01',
+    'created_by'  => $makerId,
+    'description' => 'Supplier payment voucher',
+    'lines'       => [ ... ],
+]);
+
+// 2. Submit for approval
+$entry->submitForApproval(userId: $makerId);
+// Status is now 'pending_approval'
+
+// 3. Check if current logged-in user can approve (Maker-Checker check + Threshold check)
+if (FinCore::canApproveJournalEntry($entry, userId: $approverId)) {
+    // 4. Approve entry
+    FinCore::approveJournalEntry(
+        entry: $entry,
+        approverId: $approverId,
+        comment: 'Verified with vendor invoice'
+    );
+    // Status is now 'approved'
+
+    // 5. Post to General Ledger
+    $entry->post();
+    // Status is now 'posted'
+} else {
+    // Or reject with mandatory reason
+    FinCore::rejectJournalEntry(
+        entry: $entry,
+        approverId: $approverId,
+        reason: 'Missing tax invoice attachment'
+    );
+    // Status is now 'rejected'
+}
+
+// 6. Maker can revise a rejected entry back to draft:
+$entry->returnToDraft('Updated invoice attached');
+```
+
+#### UI Helpers for ERP Dashboards
+
+```php
+// Fetch pending approval entries awaiting action for a specific user:
+$pendingList = FinCore::getPendingApprovals(userId: auth()->id());
+
+// Retrieve the audit trail and history of all approvals and rejections:
+$history = FinCore::getApprovalHistory($entry);
+
+foreach ($history as $record) {
+    // $record->approver_id
+    // $record->action ('approved' or 'rejected')
+    // $record->level
+    // $record->amount
+    // $record->comment / reason
+    // $record->created_at
+}
+```
+
+---
+
+### 17. Running Tests
 
 Run the package test suite using PHPUnit:
 

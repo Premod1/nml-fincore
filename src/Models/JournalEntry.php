@@ -26,18 +26,24 @@ class JournalEntry extends Model
         'created_by',
         'submitted_by',
         'approved_by',
+        'rejected_by',
         'submitted_at',
         'approved_at',
+        'rejected_at',
         'reviewer_note',
+        'rejection_reason',
+        'approval_level',
     ];
 
     protected $casts = [
-        'status' => JvStatus::class,
-        'type' => JvType::class,
-        'date' => 'date',
-        'submitted_at' => 'datetime',
-        'approved_at' => 'datetime',
-        'exchange_rate' => 'float',
+        'status'         => JvStatus::class,
+        'type'           => JvType::class,
+        'date'           => 'date',
+        'submitted_at'   => 'datetime',
+        'approved_at'    => 'datetime',
+        'rejected_at'    => 'datetime',
+        'exchange_rate'  => 'float',
+        'approval_level' => 'integer',
     ];
 
     public function getTable()
@@ -50,6 +56,11 @@ class JournalEntry extends Model
         return $this->hasMany(JournalEntryLine::class);
     }
 
+    public function approvals(): HasMany
+    {
+        return $this->hasMany(JournalEntryApproval::class);
+    }
+
     public function journalable(): MorphTo
     {
         return $this->morphTo();
@@ -60,24 +71,70 @@ class JournalEntry extends Model
      */
     public function submit(?int $userId = null): void
     {
-        if ($this->status !== JvStatus::DRAFT) {
-            throw new AccountingException("Only draft entries can be submitted.");
+        if (!in_array($this->status, [JvStatus::DRAFT, JvStatus::REJECTED])) {
+            throw new AccountingException("Only draft or rejected entries can be submitted.");
         }
 
         $this->update([
-            'status' => JvStatus::SUBMITTED,
-            'submitted_by' => $userId ?? auth()->id(),
-            'submitted_at' => now(),
+            'status'           => JvStatus::PENDING_APPROVAL,
+            'submitted_by'     => $userId ?? auth()->id(),
+            'submitted_at'     => now(),
+            'rejection_reason' => null,
         ]);
+    }
+
+    /**
+     * Submit draft for approval via ApprovalWorkflowEngine.
+     */
+    public function submitForApproval(?int $userId = null): void
+    {
+        $fresh = (new \Nml\FinCore\Services\ApprovalWorkflowEngine())->submitForApproval($this, $userId);
+        $this->fill($fresh->getAttributes());
+        $this->syncOriginal();
+    }
+
+    /**
+     * Approve entry via ApprovalWorkflowEngine.
+     */
+    public function approve(int|string $approverId, ?string $comment = null, ?string $role = null): void
+    {
+        $fresh = (new \Nml\FinCore\Services\ApprovalWorkflowEngine())->approve($this, $approverId, $comment, $role);
+        $this->fill($fresh->getAttributes());
+        $this->syncOriginal();
+    }
+
+    /**
+     * Reject entry with a mandatory reason via ApprovalWorkflowEngine.
+     */
+    public function reject(int|string $approverId, string $reason, ?string $role = null): void
+    {
+        $fresh = (new \Nml\FinCore\Services\ApprovalWorkflowEngine())->reject($this, $approverId, $reason, $role);
+        $this->fill($fresh->getAttributes());
+        $this->syncOriginal();
+    }
+
+    /**
+     * Check if a user is authorized to approve this entry.
+     */
+    public function canApprove(int|string $userId, ?string $role = null): bool
+    {
+        return (new \Nml\FinCore\Services\ApprovalWorkflowEngine())->canApprove($this, $userId, $role);
     }
 
     /**
      * Post entry to General Ledger.
      */
-    public function post(bool $bypassPeriodLock = false, ?int $userId = null): void
+    public function post(bool $bypassPeriodLock = false, ?int $userId = null, bool $bypassApproval = false): void
     {
         if (in_array($this->status, [JvStatus::POSTED, JvStatus::VOID])) {
             throw new AccountingException("Cannot post an entry that is already posted or voided.");
+        }
+
+        // Validate approval workflow status if enabled
+        if (!$bypassApproval && config('accounting.approval_workflow.enabled', false)) {
+            if ($this->status !== JvStatus::APPROVED) {
+                throw new AccountingException("Cannot post entry in status '{$this->status->value}'. Approval workflow is enabled; entry must be approved first.");
+            }
         }
 
         // 1. Enforce debit-credit balance in functional currency
@@ -97,7 +154,7 @@ class JournalEntry extends Model
             }
         }
 
-        // 2. Enforce Period Lock
+        // 3. Enforce Period Lock
         if (!$bypassPeriodLock && config('accounting.enforce_period_lock', true)) {
             $isPeriodClosed = FiscalPeriod::where('start_date', '<=', $this->date)
                 ->where('end_date', '>=', $this->date)
@@ -116,18 +173,18 @@ class JournalEntry extends Model
 
         $this->update([
             'status' => JvStatus::POSTED,
-            'approved_by' => $userId ?? auth()->id(),
-            'approved_at' => now(),
+            'approved_by' => $userId ?? auth()->id() ?? $this->approved_by,
+            'approved_at' => $this->approved_at ?? now(),
         ]);
     }
 
     /**
-     * Reject submitted entry and return to draft.
+     * Reject or return entry to draft.
      */
     public function returnToDraft(string $note): void
     {
-        if ($this->status !== JvStatus::SUBMITTED) {
-            throw new AccountingException("Only submitted entries can be returned to draft.");
+        if (!in_array($this->status, [JvStatus::SUBMITTED, JvStatus::PENDING_APPROVAL, JvStatus::REJECTED])) {
+            throw new AccountingException("Only submitted, pending_approval, or rejected entries can be returned to draft.");
         }
 
         $this->update([

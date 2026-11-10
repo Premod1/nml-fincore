@@ -1061,6 +1061,82 @@ class LedgerEngine
         return (new RecurringJournalEntryEngine())->processEntry($recurringEntry, $runDate, $force, $userId);
     }
 
+    /**
+     * Register a custom role checker callback for the approval workflow (Method 1: ERP User/Role Hook).
+     */
+    public function setRoleChecker(?\Closure $checker): void
+    {
+        ApprovalWorkflowEngine::setRoleChecker($checker);
+    }
+
+    /**
+     * Submit a draft or rejected journal entry for approval.
+     */
+    public function submitForApproval(
+        \Nml\FinCore\Models\JournalEntry|int $entry,
+        ?int $userId = null
+    ): \Nml\FinCore\Models\JournalEntry {
+        return (new ApprovalWorkflowEngine())->submitForApproval($entry, $userId);
+    }
+
+    /**
+     * Approve a journal entry adhering to maker-checker and threshold rules.
+     */
+    public function approveJournalEntry(
+        \Nml\FinCore\Models\JournalEntry|int $entry,
+        int|string $approverId,
+        ?string $comment = null,
+        ?string $role = null
+    ): \Nml\FinCore\Models\JournalEntry {
+        return (new ApprovalWorkflowEngine())->approve($entry, $approverId, $comment, $role);
+    }
+
+    /**
+     * Reject a journal entry with a mandatory reason.
+     */
+    public function rejectJournalEntry(
+        \Nml\FinCore\Models\JournalEntry|int $entry,
+        int|string $approverId,
+        string $reason,
+        ?string $role = null
+    ): \Nml\FinCore\Models\JournalEntry {
+        return (new ApprovalWorkflowEngine())->reject($entry, $approverId, $reason, $role);
+    }
+
+    /**
+     * Check whether a user is authorized to approve a given journal entry.
+     */
+    public function canApproveJournalEntry(
+        \Nml\FinCore\Models\JournalEntry|int $entry,
+        int|string $userId,
+        ?string $role = null
+    ): bool {
+        if (is_numeric($entry)) {
+            $entry = \Nml\FinCore\Models\JournalEntry::findOrFail($entry);
+        }
+
+        return (new ApprovalWorkflowEngine())->canApprove($entry, $userId, $role);
+    }
+
+    /**
+     * Fetch pending approval journal entries, optionally filtered for a specific approver.
+     */
+    public function getPendingApprovals(
+        int|string|null $userId = null,
+        ?string $role = null
+    ): \Illuminate\Support\Collection {
+        return (new ApprovalWorkflowEngine())->getPendingApprovals($userId, $role);
+    }
+
+    /**
+     * Retrieve the approval and rejection history for a journal entry.
+     */
+    public function getApprovalHistory(
+        \Nml\FinCore\Models\JournalEntry|int $entry
+    ): \Illuminate\Support\Collection {
+        return (new ApprovalWorkflowEngine())->getApprovalHistory($entry);
+    }
+
     private function normalizeStartDate(?string $date): ?string
     {
         return ($date && strlen($date) === 10) ? $date . ' 00:00:00' : $date;
