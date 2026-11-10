@@ -1023,6 +1023,44 @@ class LedgerEngine
         return (new ForexRevaluationEngine())->reverseRevaluationEntry($entry, $reversalDate, $userId);
     }
 
+    /**
+     * Create a new recurring journal entry template.
+     */
+    public function createRecurringEntry(array $data): \Nml\FinCore\Models\RecurringJournalEntry
+    {
+        return (new RecurringJournalEntryEngine())->create($data);
+    }
+
+    /**
+     * Update an existing recurring journal entry template.
+     */
+    public function updateRecurringEntry(
+        \Nml\FinCore\Models\RecurringJournalEntry|int $entry,
+        array $data
+    ): \Nml\FinCore\Models\RecurringJournalEntry {
+        return (new RecurringJournalEntryEngine())->update($entry, $data);
+    }
+
+    /**
+     * Process due recurring journal entries as of a given date.
+     */
+    public function processDueRecurringEntries(?string $asOfDate = null, ?int $userId = null): array
+    {
+        return (new RecurringJournalEntryEngine())->processDue($asOfDate, $userId);
+    }
+
+    /**
+     * Process a single recurring journal entry and generate its journal entry.
+     */
+    public function processRecurringEntry(
+        \Nml\FinCore\Models\RecurringJournalEntry|int $recurringEntry,
+        ?string $runDate = null,
+        bool $force = false,
+        ?int $userId = null
+    ): ?\Nml\FinCore\Models\JournalEntry {
+        return (new RecurringJournalEntryEngine())->processEntry($recurringEntry, $runDate, $force, $userId);
+    }
+
     private function normalizeStartDate(?string $date): ?string
     {
         return ($date && strlen($date) === 10) ? $date . ' 00:00:00' : $date;

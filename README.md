@@ -728,7 +728,107 @@ foreach ($logs as $log) {
 
 ---
 
-### 15. Running Tests
+### 15. Recurring & Scheduled Journal Entries Engine
+
+Automate recurring journal vouchers for subscriptions, lease amortizations, rent, prepayment recognition, and interest accruals. Supports fixed amounts, dynamic formulas, configurable frequencies, iteration tracking, expiration dates, and automated Artisan command processing.
+
+#### Creating a Recurring Journal Entry Template
+
+```php
+use Nml\FinCore\Facades\FinCore;
+
+// 1. Fixed-amount recurring entry (e.g. Monthly Office Rent)
+$recurringRent = FinCore::createRecurringEntry([
+    'name'           => 'Monthly Office Rent',
+    'code'           => 'REC-RENT',
+    'frequency'      => 'monthly',    // 'daily', 'weekly', 'monthly', 'quarterly', 'annually', 'custom'
+    'interval'       => 1,            // Every 1 month
+    'start_date'     => '2026-01-01',
+    'end_date'       => '2026-12-31', // Optional expiration date
+    'max_iterations' => 12,           // Optional iteration limit
+    'auto_post'      => true,         // Automatically post to GL, or false to create drafts
+    'lines_template' => [
+        [
+            'account_id'  => 18, // Rent Expense
+            'type'        => 'debit',
+            'amount'      => 75000.00,
+            'description' => 'Office Rent for {month_name} {year} ({iteration}/{max_iterations})',
+        ],
+        [
+            'account_id'  => 2,  // Bank Account
+            'type'        => 'credit',
+            'amount'      => 75000.00,
+            'description' => 'Rent Payment - {month_name} {year}',
+        ],
+    ],
+]);
+
+// 2. Dynamic formula-based recurring entry (e.g. Prepaid Insurance Amortization)
+$prepaymentAmortization = FinCore::createRecurringEntry([
+    'name'           => 'Prepaid Insurance Amortization',
+    'code'           => 'AMORT-INS',
+    'frequency'      => 'monthly',
+    'start_date'     => '2026-01-01',
+    'max_iterations' => 12,
+    'auto_post'      => true,
+    'metadata'       => [
+        'total_amount' => 120000.00,
+    ],
+    'lines_template' => [
+        [
+            'account_id'     => 19, // Insurance Expense
+            'type'           => 'debit',
+            'amount_formula' => 'total_amount / max_iterations', // Evaluates to 10,000/month
+            'description'    => 'Monthly Insurance Amortization - Month {iteration}/{max_iterations}',
+        ],
+        [
+            'account_id'     => 5,  // Prepaid Expenses
+            'type'           => 'credit',
+            'amount_formula' => 'total_amount / max_iterations',
+            'description'    => 'Amortization offset',
+        ],
+    ],
+]);
+```
+
+#### Processing Recurring Entries Programmatically
+
+```php
+// Process all recurring entries that are due as of a specific date:
+$result = FinCore::processDueRecurringEntries('2026-06-01');
+
+// Process a single specific recurring entry:
+$entry = FinCore::processRecurringEntry($recurringRent, runDate: '2026-06-01');
+```
+
+#### Processing via Artisan CLI and Task Scheduler
+
+Run the artisan command to process all due recurring entries:
+
+```bash
+php artisan fincore:process-recurring
+```
+
+Options:
+```bash
+# Process entries due as of a specific reference date
+php artisan fincore:process-recurring --date=2026-06-01
+
+# Process a specific recurring entry by ID
+php artisan fincore:process-recurring --id=5 --force
+```
+
+In your Laravel application's `routes/console.php` (or `app/Console/Kernel.php`), schedule it to run automatically daily:
+
+```php
+use Illuminate\Support\Facades\Schedule;
+
+Schedule::command('fincore:process-recurring')->dailyAt('00:05');
+```
+
+---
+
+### 16. Running Tests
 
 Run the package test suite using PHPUnit:
 
