@@ -53,4 +53,21 @@ return [
      * Account codes classified as Accounts Payable for Ageing reporting.
      */
     'ap_account_codes' => ['2000'],
+
+    /*
+     * Account codes classified as monetary accounts eligible for unrealized forex revaluation.
+     * Cash/Bank, AR, AP, Short/Long term debt.
+     */
+    'monetary_account_codes' => ['1000', '1100', '1200', '2000', '2400', '2500'],
+
+    /*
+     * Account codes explicitly excluded as non-monetary (inventory, prepayments, fixed assets, equity).
+     */
+    'non_monetary_account_codes' => ['1300', '1400', '1500', '1550', '2100', '3000', '3099', '3100', '3900'],
+
+    /*
+     * Standard Chart of Accounts codes for Unrealized Foreign Exchange Gain and Loss.
+     */
+    'forex_gain_account_code' => '4900',
+    'forex_loss_account_code' => '6900',
 ];

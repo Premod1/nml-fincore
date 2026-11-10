@@ -26,6 +26,9 @@ use Illuminate\Support\Facades\Facade;
  * @method static array getPayablesAgeingReport(string $asOfDate, ?array $accountIds = null)
  * @method static \Nml\FinCore\Models\JournalEntry|null closeFiscalYear(int $fiscalYearId, int $retainedEarningsAccountId, ?int $userId = null)
  * @method static \Illuminate\Support\Collection getAuditHistory(int $journalEntryId)
+ * @method static array calculateForexRevaluation(string $asOfDate, array $closingRates, ?string $sbuCode = null, ?array $accountIds = null)
+ * @method static array revalueForexBalances(string $asOfDate, array $closingRates, bool $autoReverse = true, ?string $reversalDate = null, ?string $sbuCode = null, ?array $accountIds = null, ?int $gainAccountId = null, ?int $lossAccountId = null, ?int $userId = null)
+ * @method static \Nml\FinCore\Models\JournalEntry reverseForexRevaluationEntry(\Nml\FinCore\Models\JournalEntry|int $entry, ?string $reversalDate = null, ?int $userId = null)
  * 
  * @see \Nml\FinCore\Services\LedgerEngine
  */

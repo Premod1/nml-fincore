@@ -78,10 +78,10 @@ class Account extends Model
                     $q->where('sbu_code', $sbuCode);
                 }
                 if ($startDate) {
-                    $q->where('date', '>=', $startDate);
+                    $q->whereDate('date', '>=', $startDate);
                 }
                 if ($endDate) {
-                    $q->where('date', '<=', $endDate);
+                    $q->whereDate('date', '<=', $endDate);
                 }
             });
 

@@ -972,6 +972,57 @@ class LedgerEngine
             ->get();
     }
 
+    /**
+     * Preview / calculate period-end unrealized forex revaluations without posting entries.
+     */
+    public function calculateForexRevaluation(
+        string $asOfDate,
+        array $closingRates,
+        ?string $sbuCode = null,
+        ?array $accountIds = null
+    ): array {
+        return (new ForexRevaluationEngine())->calculateRevaluation($asOfDate, $closingRates, $sbuCode, $accountIds);
+    }
+
+    /**
+     * Perform automated period-end unrealized foreign exchange revaluation and post adjusting journal entries.
+     * Optionally generates auto-reversal entries on the first day of the subsequent fiscal period.
+     */
+    public function revalueForexBalances(
+        string $asOfDate,
+        array $closingRates,
+        bool $autoReverse = true,
+        ?string $reversalDate = null,
+        ?string $sbuCode = null,
+        ?array $accountIds = null,
+        ?int $gainAccountId = null,
+        ?int $lossAccountId = null,
+        ?int $userId = null
+    ): array {
+        return (new ForexRevaluationEngine())->revalue(
+            $asOfDate,
+            $closingRates,
+            $autoReverse,
+            $reversalDate,
+            $sbuCode,
+            $accountIds,
+            $gainAccountId,
+            $lossAccountId,
+            $userId
+        );
+    }
+
+    /**
+     * Reverse an existing posted forex revaluation entry.
+     */
+    public function reverseForexRevaluationEntry(
+        \Nml\FinCore\Models\JournalEntry|int $entry,
+        ?string $reversalDate = null,
+        ?int $userId = null
+    ): \Nml\FinCore\Models\JournalEntry {
+        return (new ForexRevaluationEngine())->reverseRevaluationEntry($entry, $reversalDate, $userId);
+    }
+
     private function normalizeStartDate(?string $date): ?string
     {
         return ($date && strlen($date) === 10) ? $date . ' 00:00:00' : $date;
