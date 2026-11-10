@@ -36,6 +36,10 @@ class FinCoreServiceProvider extends ServiceProvider
             $this->publishes([
                 __DIR__ . '/../Config/accounting.php' => config_path('accounting.php'),
             ], 'fincore-config');
+
+            $this->commands([
+                \Nml\FinCore\Console\Commands\ProcessRecurringJournalEntriesCommand::class,
+            ]);
         }
     }
 }

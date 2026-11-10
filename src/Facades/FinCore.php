@@ -29,6 +29,10 @@ use Illuminate\Support\Facades\Facade;
  * @method static array calculateForexRevaluation(string $asOfDate, array $closingRates, ?string $sbuCode = null, ?array $accountIds = null)
  * @method static array revalueForexBalances(string $asOfDate, array $closingRates, bool $autoReverse = true, ?string $reversalDate = null, ?string $sbuCode = null, ?array $accountIds = null, ?int $gainAccountId = null, ?int $lossAccountId = null, ?int $userId = null)
  * @method static \Nml\FinCore\Models\JournalEntry reverseForexRevaluationEntry(\Nml\FinCore\Models\JournalEntry|int $entry, ?string $reversalDate = null, ?int $userId = null)
+ * @method static \Nml\FinCore\Models\RecurringJournalEntry createRecurringEntry(array $data)
+ * @method static \Nml\FinCore\Models\RecurringJournalEntry updateRecurringEntry(\Nml\FinCore\Models\RecurringJournalEntry|int $entry, array $data)
+ * @method static array processDueRecurringEntries(?string $asOfDate = null, ?int $userId = null)
+ * @method static \Nml\FinCore\Models\JournalEntry|null processRecurringEntry(\Nml\FinCore\Models\RecurringJournalEntry|int $recurringEntry, ?string $runDate = null, bool $force = false, ?int $userId = null)
  * 
  * @see \Nml\FinCore\Services\LedgerEngine
  */
