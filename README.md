@@ -424,6 +424,56 @@ $entry = FinCore::createJournalEntry([
 $entry->post();
 ```
 
+#### Period-End Unrealized Forex Revaluation Engine
+In multi-currency accounting (IAS 21), foreign-currency denominated monetary balances (Bank accounts, Accounts Receivable, Accounts Payable, short/long-term debt) must be revalued at period-end closing exchange rates. Non-monetary accounts (such as Merchandise Inventory, Fixed Assets, Prepayments, and Equity) are strictly excluded from revaluation.
+
+FinCore provides automated period-end revaluation calculations, automated adjusting journal entry generation (unrealized gain/loss), and automatic reversing entry generation on the first day of the subsequent fiscal period:
+
+```php
+use Nml\FinCore\Facades\FinCore;
+
+// 1. Preview / calculate revaluation without writing entries to the database
+$preview = FinCore::calculateForexRevaluation(
+    asOfDate: '2026-06-30',
+    closingRates: [
+        'USD' => 320.000000,
+        'EUR' => 345.500000,
+    ]
+);
+
+// Returns itemized details, total_gain, total_loss, and net_gain_loss:
+// [
+//     'as_of_date'    => '2026-06-30',
+//     'total_gain'    => 20000.0,
+//     'total_loss'    => 4000.0,
+//     'net_gain_loss' => 16000.0,
+//     'items'         => [ ... ]
+// ]
+
+// 2. Perform automated revaluation and post adjusting journal entries
+$result = FinCore::revalueForexBalances(
+    asOfDate: '2026-06-30',
+    closingRates: [
+        'USD' => 320.000000,
+        'EUR' => 345.500000,
+    ],
+    autoReverse: true, // Automatically generates reversing entry on 1st day of next period
+    reversalDate: null // Optional: defaults to next fiscal period start date or next day
+);
+
+// $result contains:
+// - 'journal_entries': array of posted revaluation adjusting entries
+// - 'reversal_entries': array of posted reversing entries
+// - 'journal_entry': primary revaluation entry
+// - 'reversal_entry': primary auto-reversal entry
+
+// 3. Manual reversal of an existing revaluation entry (if autoReverse was false):
+$reversal = FinCore::reverseForexRevaluationEntry(
+    entry: $result['journal_entry'],
+    reversalDate: '2026-07-01'
+);
+```
+
 ### 9. Fixed Assets & Depreciation
 
 #### Registering a Fixed Asset

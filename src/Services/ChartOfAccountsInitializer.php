@@ -141,6 +141,12 @@ class ChartOfAccountsInitializer
                 'type' => AccountType::REVENUE,
                 'subtype' => 'revenue',
             ],
+            [
+                'code' => '4900',
+                'name' => 'Unrealized Foreign Exchange Gain',
+                'type' => AccountType::REVENUE,
+                'subtype' => 'other_income',
+            ],
 
             // EXPENSES
             [
@@ -226,6 +232,12 @@ class ChartOfAccountsInitializer
                 'name' => 'Interest Expense - Long-term',
                 'type' => AccountType::EXPENSE,
                 'subtype' => 'expense',
+            ],
+            [
+                'code' => '6900',
+                'name' => 'Unrealized Foreign Exchange Loss',
+                'type' => AccountType::EXPENSE,
+                'subtype' => 'other_expense',
             ],
         ];
 
